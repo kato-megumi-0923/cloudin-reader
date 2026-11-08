@@ -23,17 +23,6 @@ class BookCoverView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    private companion object {
-        val ART = intArrayOf(
-            R.drawable.cover_lib_01, R.drawable.cover_lib_02, R.drawable.cover_lib_03,
-            R.drawable.cover_lib_04, R.drawable.cover_lib_05, R.drawable.cover_lib_06,
-            R.drawable.cover_lib_07, R.drawable.cover_lib_08, R.drawable.cover_lib_09,
-            R.drawable.cover_lib_10, R.drawable.cover_lib_11, R.drawable.cover_lib_12,
-            R.drawable.cover_lib_13, R.drawable.cover_lib_14, R.drawable.cover_lib_15,
-            R.drawable.cover_lib_16, R.drawable.cover_lib_17, R.drawable.cover_lib_18,
-            R.drawable.cover_lib_19, R.drawable.cover_lib_20
-        )
-    }
 
     private var title: String = ""
     private var bookId: String = ""
