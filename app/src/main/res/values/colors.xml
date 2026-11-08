@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="paper">#F7F4EF</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="ink">#2B2A28</color>
+    <color name="ink_soft">#8A857D</color>
+    <color name="accent">#E0A458</color>
+    <color name="accent_soft">#FBEFDC</color>
+    <color name="divider">#EDE8DF</color>
+    <color name="reader_bg">#F7F4EF</color>
+    <color name="reader_ink">#2B2A28</color>
+
+    <color name="shelf_bg">#F0F1F2</color>
+    <color name="shelf_title">#222222</color>
+    <color name="shelf_meta">#9A9A9A</color>
+    <color name="card_bg">#FAFAFA</color>
+    <color name="card_border">#E6E7E9</color>
+</resources>

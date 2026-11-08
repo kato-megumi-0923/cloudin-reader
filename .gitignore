@@ -1,0 +1,26 @@
+# Gradle / Android build outputs
+.gradle/
+build/
+app/build/
+*.iml
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.hprof
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+build.log
+
+# 打包产物（需要时手动上传 release）
+dist/
+*.apk
+*.aab
