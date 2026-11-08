@@ -24,3 +24,6 @@ build.log
 dist/
 *.apk
 *.aab
+
+# 默认封面插画（版权受限，不进仓库；本地放置于 drawable-nodpi/）
+app/src/main/res/drawable-nodpi/cover_lib_*.jpg

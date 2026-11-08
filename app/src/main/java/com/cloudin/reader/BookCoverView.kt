@@ -155,8 +155,11 @@ class BookCoverView @JvmOverloads constructor(
 
     /** 用预置插画做封面：居中裁切 + 底部压暗，保证书名可读 */
     private fun drawArtwork(canvas: Canvas, w: Float, h: Float): Boolean {
-        val idx = ((title.hashCode() * 31 + bookId.hashCode()) and 0x7fffffff) % ART.size
-        val res = ART[idx]
+        val count = 20
+        val idx = ((title.hashCode() * 31 + bookId.hashCode()) and 0x7fffffff) % count
+        val name = String.format("cover_lib_%02d", idx + 1)
+        val res = resources.getIdentifier(name, "drawable", context.packageName)
+        if (res == 0) return false
         val d = runCatching { androidx.core.content.ContextCompat.getDrawable(context, res) }.getOrNull() ?: return false
         val rect = RectF(0f, 0f, w, h)
         canvas.save()
