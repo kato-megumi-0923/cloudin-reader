@@ -16,6 +16,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -24,6 +26,33 @@ import java.util.zip.ZipOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class ReaderRegressionTest {
+    @Test fun readingSessionSplitsAtLocalMidnightAndKeepsLegacyTotal() {
+        val base = instrumentation.targetContext
+        val file = "stats-test-${System.nanoTime()}"
+        val isolated = object : ContextWrapper(base) {
+            override fun getSharedPreferences(name: String, mode: Int) = base.getSharedPreferences(file, mode)
+        }
+        val zone = ZoneId.of("Asia/Shanghai")
+        val day = LocalDate.of(2026, 11, 9)
+        try {
+            isolated.getSharedPreferences(file, Context.MODE_PRIVATE).edit().putLong("totalMillis", 600_000L).commit()
+            val end = day.atStartOfDay(zone).plusMinutes(4).toInstant().toEpochMilli()
+            ReadingStats.record(isolated, end, 600_000L, zone, bookId = "first-book")
+            val data = ReadingStats.read(isolated)
+            assertEquals(360_000L, data.hoursOn(day.minusDays(1))[23])
+            assertEquals(240_000L, data.hoursOn(day)[0])
+            assertEquals(2, data.daysRead)
+            assertEquals(2, data.streak(day))
+            assertEquals(0, data.streak(day.plusDays(2)))
+            assertEquals(1_200_000L, ReadingStats.total(isolated))
+            ReadingStats.record(isolated, end, 300_000L, zone, bookId = "second-book")
+            assertEquals(mapOf("first-book" to 600_000L, "second-book" to 300_000L), ReadingStats.bookTimes(isolated))
+            assertEquals(1_500_000L, ReadingStats.total(isolated))
+        } finally {
+            base.deleteSharedPreferences(file)
+        }
+    }
+
     @Test fun foldedPaperReflectsTheLiftedCornerForBothDirections() {
         val curl = PageCurl()
         val clip = Region(0, 0, 800, 1000)

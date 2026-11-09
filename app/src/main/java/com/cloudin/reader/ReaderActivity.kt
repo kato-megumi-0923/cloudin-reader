@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
@@ -41,6 +42,8 @@ class ReaderActivity : AppCompatActivity() {
     private var theme = ReaderPrefs.THEME_PAPER
     private var lastProgress = 0f
     private var barsVisible = false
+    private var readerResumed = false
+    private var readingStartedAt: Long? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -152,6 +155,7 @@ class ReaderActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
                 document = doc
+                if (readerResumed) readingStartedAt = SystemClock.elapsedRealtime()
                 val start = (book.progress * doc.text.length).toInt()
                 pageView.setDocument(doc, start)
                 loading.visibility = View.GONE
@@ -656,7 +660,18 @@ class ReaderActivity : AppCompatActivity() {
         }
         return globalSwipeDone || super.dispatchTouchEvent(ev)
     }
+    override fun onResume() {
+        super.onResume()
+        readerResumed = true
+        if (document != null) readingStartedAt = SystemClock.elapsedRealtime()
+    }
+
     override fun onPause() {
+        readerResumed = false
+        readingStartedAt?.let {
+            ReadingStats.record(this, System.currentTimeMillis(), SystemClock.elapsedRealtime() - it, bookId = book.id)
+        }
+        readingStartedAt = null
         super.onPause()
         if (document != null) saveProgress(lastProgress)
     }

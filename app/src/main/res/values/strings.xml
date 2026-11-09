@@ -8,4 +8,22 @@
     <string name="delete_confirm">删除《%1$s》？\n导入的文件会一起删除，无法恢复。</string>
     <string name="cancel">取消</string>
     <string name="ok">确定</string>
+    <string name="profile_tab">我的</string>
+    <string name="profile_recent">最近阅读</string>
+    <string name="profile_stats">阅读统计</string>
+    <string name="profile_about">关于云中阅读</string>
+    <string name="profile_settings">设置</string>
+    <string name="profile_no_recent">还没有阅读记录</string>
+    <string name="profile_duration_hours_minutes">%1$d 小时 %2$d 分钟</string>
+    <string name="profile_duration_minutes">%1$d 分钟</string>
+    <string name="profile_about_details">版本 %1$s\n支持 TXT 和 EPUB 的本地阅读器。</string>
+    <string name="history_title">阅读记录</string>
+    <string name="history_in_progress">正在阅读</string>
+    <string name="history_completed">读完</string>
+    <string name="history_book_count">共计 %1$d 本书籍</string>
+    <string name="history_no_in_progress">还没有正在阅读的书</string>
+    <string name="history_no_completed">还没有读完的书</string>
+    <string name="history_no_duration">暂无时长记录</string>
+    <string name="history_under_tenth_minute">不足 0.1 分钟</string>
+    <string name="history_duration_minutes">%1$.1f 分钟</string>
 </resources>

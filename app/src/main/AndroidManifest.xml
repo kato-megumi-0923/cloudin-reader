@@ -19,6 +19,9 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".ReadingStatsActivity" android:exported="false" />
+        <activity android:name=".ReadingHistoryActivity" android:exported="false" />
+
         <activity
             android:name=".ReaderActivity"
             android:exported="false"

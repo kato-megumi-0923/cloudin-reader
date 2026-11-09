@@ -1,0 +1,69 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:minHeight="112dp"
+    android:orientation="horizontal"
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="14dp">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/historyDuration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="serif"
+            android:textColor="@color/ink"
+            android:textSize="19sp" />
+
+        <TextView
+            android:id="@+id/historyBookTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="13dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/historyPercent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#A94F3B"
+                android:textSize="11sp" />
+
+            <ProgressBar
+                android:id="@+id/historyProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="3dp"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:importantForAccessibility="no"
+                android:progressBackgroundTint="#E7DFD6"
+                android:progressTint="#C96950" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <com.cloudin.reader.BookCoverView
+        android:id="@+id/historyCover"
+        android:layout_width="58dp"
+        android:layout_height="82dp"
+        android:layout_marginStart="20dp"
+        android:importantForAccessibility="no" />
+</LinearLayout>

@@ -36,7 +36,7 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
-    private enum class Tab { SHELF, GROUPS, FAVORITE }
+    private enum class Tab { SHELF, GROUPS, FAVORITE, PROFILE }
 
     private lateinit var recycler: RecyclerView
     private lateinit var empty: TextView
@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var actions: View
     private lateinit var btnMode: LiquidGlassButton
     private lateinit var bottomBarView: View
+    private lateinit var profilePage: View
 
     private val books = mutableListOf<Book>()
     private val groups = mutableListOf<BookGroup>()
@@ -145,22 +146,16 @@ class MainActivity : AppCompatActivity() {
                 listOf(
                     com.example.liquidglass.LiquidGlassTabBar.TabItem("书架", getDrawable(R.drawable.ic_tab_shelf)),
                     com.example.liquidglass.LiquidGlassTabBar.TabItem("分组", getDrawable(R.drawable.ic_tab_groups)),
-                    com.example.liquidglass.LiquidGlassTabBar.TabItem("喜爱", getDrawable(R.drawable.ic_tab_fav))
+                    com.example.liquidglass.LiquidGlassTabBar.TabItem("喜爱", getDrawable(R.drawable.ic_tab_fav)),
+                    com.example.liquidglass.LiquidGlassTabBar.TabItem(getString(R.string.profile_tab), getDrawable(R.drawable.ic_tab_profile))
                 )
             )
             selectedIndex = 0
-            onTabSelected = { index ->
-                switchTab(
-                    when (index) {
-                        0 -> Tab.SHELF
-                        1 -> Tab.GROUPS
-                        else -> Tab.FAVORITE
-                    }
-                )
-            }
+            onTabSelected = { index -> switchTab(Tab.entries[index]) }
         }
         findViewById<View>(R.id.root).post { updateTabBar() }
         setupEmpty()
+        setupProfile()
 
         adapter = BookshelfAdapter(
             layoutMode,
@@ -277,17 +272,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchTab(tab: Tab) {
         if (currentTab == tab && currentGroup == null) return
+        val previous = currentTab
         currentTab = tab
         currentGroup = null
         if (adapter.selecting) exitSelecting() else reload()
+        val content = findViewById<View>(R.id.container)
+        if (previous == Tab.PROFILE || tab == Tab.PROFILE) {
+            content.animatePageEntry(forward = tab == Tab.PROFILE)
+        } else {
+            content.animate().cancel()
+            content.translationX = 0f
+            content.alpha = 1f
+        }
     }
 
     private fun updateTabBar() {
-        val index = when (currentTab) {
-            Tab.SHELF -> 0
-            Tab.GROUPS -> 1
-            else -> 2
-        }
+        val index = currentTab.ordinal
         val bar = findViewById<com.example.liquidglass.LiquidGlassTabBar>(R.id.bottomBar)
         if (bar.selectedIndex != index) bar.selectedIndex = index
     }
@@ -306,9 +306,19 @@ class MainActivity : AppCompatActivity() {
         groups.clear()
         groups.addAll(GroupStore.load(this))
         val all = BookStore.load(this)
+        val profileHome = currentTab == Tab.PROFILE
+        profilePage.visibility = if (profileHome) View.VISIBLE else View.GONE
+        recycler.visibility = if (profileHome) View.GONE else View.VISIBLE
+        actions.visibility = if (currentTab == Tab.PROFILE || adapter.selecting) View.GONE else View.VISIBLE
+        if (profileHome) {
+            profilePage.findViewById<TextView>(R.id.profileRecentDetail).text =
+                all.filter { it.lastRead > 0L }.maxByOrNull { it.lastRead }?.title ?: getString(R.string.profile_no_recent)
+            profilePage.findViewById<TextView>(R.id.profileStatsDetail).text = readingDurationLabel()
+        }
 
         val folderList = mutableListOf<Pair<BookGroup?, Int>>()
         val visible: List<Book> = when {
+            currentTab == Tab.PROFILE -> emptyList()
             currentTab == Tab.FAVORITE -> all.filter { it.favorite }
             currentGroup != null -> all.filter { it.groupId == currentGroup!!.id }
             currentTab == Tab.GROUPS -> {
@@ -320,10 +330,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         books.clear()
-        books.addAll(visible.sortedWith(compareByDescending<Book> { it.pinned }.thenByDescending { it.lastRead }))
+        books.addAll(visible.sortedWith(
+            compareByDescending<Book> { it.pinned }.thenByDescending { it.lastRead }
+        ))
         adapter.submit(folderList, books)
 
         when {
+            profileHome -> empty.visibility = View.GONE
             currentTab == Tab.FAVORITE && books.isEmpty() -> {
                 empty.text = "还没有喜爱的书\n点卡片右上角的小心心收藏"
                 empty.visibility = View.VISIBLE
@@ -352,6 +365,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             btnBack.visibility = View.GONE
             title.text = when (currentTab) {
+                Tab.PROFILE -> getString(R.string.profile_tab)
                 Tab.FAVORITE -> "喜爱"
                 Tab.GROUPS -> "分组"
                 else -> getString(R.string.shelf)
@@ -359,6 +373,65 @@ class MainActivity : AppCompatActivity() {
             bottomBarView.visibility = View.VISIBLE
         }
         updateTabBar()
+    }
+
+    private fun setupProfile() {
+        val host = findViewById<FrameLayout>(R.id.container)
+        profilePage = layoutInflater.inflate(R.layout.view_profile, host, false)
+        host.addView(profilePage)
+        profilePage.findViewById<View>(R.id.profileRecent).setOnClickListener {
+            openProfilePage(ReadingHistoryActivity::class.java)
+        }
+        profilePage.findViewById<View>(R.id.profileStats).setOnClickListener {
+            openProfilePage(ReadingStatsActivity::class.java)
+        }
+        profilePage.findViewById<View>(R.id.profileAbout).setOnClickListener {
+            val version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+            AlertDialog.Builder(this)
+                .setTitle(R.string.profile_about)
+                .setMessage(getString(R.string.profile_about_details, version))
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        }
+        profilePage.findViewById<View>(R.id.profileSettings).setOnClickListener { showProfileSettings() }
+    }
+
+    private fun openProfilePage(destination: Class<out AppCompatActivity>) {
+        val intent = Intent(this, destination)
+        if (Build.VERSION.SDK_INT >= 34) startActivity(intent) else {
+            val animation = android.app.ActivityOptions.makeCustomAnimation(this, R.anim.stats_enter, R.anim.stats_under_exit)
+            startActivity(intent, animation.toBundle())
+        }
+    }
+
+    private fun readingDurationLabel(): String {
+        val minutes = ReadingStats.total(this) / 60_000
+        return if (minutes >= 60) getString(R.string.profile_duration_hours_minutes, minutes / 60, minutes % 60)
+        else getString(R.string.profile_duration_minutes, minutes)
+    }
+
+    private fun showProfileSettings() {
+        val items = arrayOf("阅读背景", "翻页方式", "书架布局")
+        AlertDialog.Builder(this).setTitle(R.string.profile_settings).setItems(items) { _, index ->
+            when (index) {
+                0 -> showProfileChoice(items[index], arrayOf("纸张", "白色", "夜间", "护眼绿"), ReaderPrefs.theme(this)) {
+                    ReaderPrefs.setTheme(this, it)
+                }
+                1 -> showProfileChoice(items[index], arrayOf("无", "平移", "仿真", "淡入"), ReaderPrefs.turnMode(this)) {
+                    ReaderPrefs.setTurnMode(this, it)
+                }
+                2 -> showProfileChoice(items[index], arrayOf("网格", "列表"), layoutMode.ordinal) {
+                    if (it != layoutMode.ordinal) toggleLayout()
+                }
+            }
+        }.setNegativeButton(R.string.cancel, null).show()
+    }
+
+    private fun showProfileChoice(title: String, choices: Array<String>, selected: Int, apply: (Int) -> Unit) {
+        AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(choices, selected) { dialog, index ->
+            apply(index)
+            dialog.dismiss()
+        }.setNegativeButton(R.string.cancel, null).show()
     }
 
     private fun openFolder(group: BookGroup) {
