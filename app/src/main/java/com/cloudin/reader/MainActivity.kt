@@ -129,6 +129,9 @@ class MainActivity : AppCompatActivity() {
         shelfFormat = ShelfFormat.entries.firstOrNull { it.key == savedFormat } ?: ShelfFormat.ALL
 
         setupRecycler()
+        header.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) updateShelfHeaderLayout()
+        }
         recycler.edgeEffectFactory = object : androidx.recyclerview.widget.RecyclerView.EdgeEffectFactory() {
             override fun createEdgeEffect(
                 view: androidx.recyclerview.widget.RecyclerView,
@@ -139,7 +142,7 @@ class MainActivity : AppCompatActivity() {
                 return e
             }
         }
-        val headerBackdrop = findViewById<View>(R.id.bgLayer)
+        val headerBackdrop = findViewById<View>(R.id.shelfBackdrop)
         listOf(R.id.btnBack, R.id.btnMode, R.id.btnFormat, R.id.btnSearch, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
             .forEach { id ->
                 findViewById<GlassActionButton>(id).apply {
@@ -214,7 +217,7 @@ class MainActivity : AppCompatActivity() {
         btnBack.setGlassClickListener { closeFolder() }
 
         recycler.post {
-            recycler.setPadding(dp(4), dp(6), dp(4), 0)
+            updateShelfHeaderLayout()
             refreshBackdrop()
         }
 
@@ -270,15 +273,60 @@ class MainActivity : AppCompatActivity() {
     private fun setupRecycler() {
         val container = findViewById<FrameLayout>(R.id.container)
         recycler = RecyclerView(this).also { rv ->
-            rv.setPadding(dp(4), dp(6), dp(4), dp(12))
+            rv.setPadding(dp(4), dp(6), dp(4), 0)
             rv.clipToPadding = false
             rv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                    updateShelfTitle()
+                }
+
                 override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
                     if (newState == RecyclerView.SCROLL_STATE_IDLE) refreshBackdrop()
                 }
             })
             container.addView(rv, FrameLayout.LayoutParams(-1, -1))
         }
+    }
+
+    private fun isShelfHome(): Boolean = currentTab == Tab.SHELF && currentGroup == null
+
+    private fun updateShelfHeaderLayout() {
+        val headerHeight = findViewById<View>(R.id.header).height
+        val shelfHome = isShelfHome()
+        val content = findViewById<View>(R.id.container)
+        val contentTop = if (shelfHome) 0 else headerHeight
+        if ((content.layoutParams as FrameLayout.LayoutParams).topMargin != contentTop) {
+            content.updateLayoutParams<FrameLayout.LayoutParams> { topMargin = contentTop }
+        }
+        // Reserve space at the start of the list, but let books scroll through that space.
+        val paddingTop = dp(6) + if (shelfHome) headerHeight else 0
+        if (recycler.paddingTop != paddingTop) {
+            val atStart = !recycler.canScrollVertically(-1)
+            recycler.setPadding(recycler.paddingLeft, paddingTop, recycler.paddingRight, recycler.paddingBottom)
+            if (atStart) {
+                (recycler.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(0, 0)
+            }
+        }
+        updateShelfTitle()
+    }
+
+    private fun updateShelfTitle() {
+        val fadeDistance = dp(32).coerceAtLeast(1)
+        val offset = if (isShelfHome() && ::adapter.isInitialized && !adapter.selecting) {
+            val manager = recycler.layoutManager as? LinearLayoutManager
+            val first = manager?.findViewByPosition(0)
+            when {
+                first != null -> recycler.paddingTop - manager.getDecoratedTop(first)
+                recycler.canScrollVertically(-1) -> fadeDistance
+                else -> 0
+            }
+        } else {
+            0
+        }
+        val progress = (offset.toFloat() / fadeDistance).coerceIn(0f, 1f)
+        title.alpha = 1f - progress
+        title.translationY = -dp(14) * progress
+        title.visibility = if (progress == 1f) View.INVISIBLE else View.VISIBLE
     }
 
     private fun setupEmpty() {
@@ -354,7 +402,7 @@ class MainActivity : AppCompatActivity() {
         groups.addAll(GroupStore.load(this))
         val all = BookStore.load(this)
         val profileHome = currentTab == Tab.PROFILE
-        val shelfHome = currentTab == Tab.SHELF && currentGroup == null
+        val shelfHome = isShelfHome()
         val formatLabel = getString(shelfFormat.label)
         btnFormat.visibility = if (shelfHome) View.VISIBLE else View.GONE
         btnFormat.text = getString(R.string.shelf_format_button, formatLabel)
@@ -432,6 +480,7 @@ class MainActivity : AppCompatActivity() {
             }
             bottomBarView.visibility = View.VISIBLE
         }
+        updateShelfHeaderLayout()
         updateTabBar()
     }
 
@@ -903,6 +952,7 @@ class MainActivity : AppCompatActivity() {
         actions.visibility = View.GONE
         btnBack.visibility = View.GONE
         title.text = "已选 ${if (book == null) 0 else 1} 本"
+        updateShelfTitle()
         empty.visibility = View.GONE
     }
 
