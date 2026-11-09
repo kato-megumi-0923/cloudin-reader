@@ -23,7 +23,7 @@ import androidx.annotation.RequiresApi
  * 着色器来自 AndroidLiquidGlassView（MIT，QmDeve），算法参考 IT之家 的改版。
  * Android 13 以下退化为半透明圆角色块。
  */
-class AgslGlassView @JvmOverloads constructor(
+open class AgslGlassView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
@@ -42,7 +42,16 @@ class AgslGlassView @JvmOverloads constructor(
         set(value) { field = value; needsUpdate = true; invalidate() }
 
     var blurRadius: Float = dp(6f)
-        set(value) { field = value; needsUpdate = true; invalidate() }
+        set(value) { field = value; blurEffect = null; needsUpdate = true; invalidate() }
+
+    internal var frosted = false
+        set(value) {
+            if (field == value) return
+            field = value
+            blurEffect = null
+            needsUpdate = true
+            invalidate()
+        }
 
     var tintColor: Int = Color.WHITE
         set(value) { field = value; needsUpdate = true; invalidate() }
@@ -50,9 +59,19 @@ class AgslGlassView @JvmOverloads constructor(
     var tintAlpha: Float = 0.10f
         set(value) { field = value; needsUpdate = true; invalidate() }
 
+    internal fun useControlOptics(radiusDp: Float) {
+        cornerRadius = dp(radiusDp)
+        refractionHeight = dp(7f)
+        refractionAmount = dp(9f)
+        blurRadius = dp(9f)
+        tintAlpha = 0.24f
+    }
+
     /** 背景内容源；不设置时用父容器。 */
     var backdropSource: View? = null
         set(value) { field = value; needsUpdate = true; invalidate() }
+
+    protected open val backdropPaddingPx: Int get() = 0
 
     private val path = Path()
     private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -66,9 +85,10 @@ class AgslGlassView @JvmOverloads constructor(
     private var effectAttached = false
     private var recording = false
     private var supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    internal val isShaderSupported: Boolean get() = supported
 
     private val preDraw = ViewTreeObserver.OnPreDrawListener {
-        if (supported) {
+        if (supported && isShown) {
             record()
             if (needsUpdate || !effectAttached) applyEffect()
         }
@@ -99,18 +119,15 @@ class AgslGlassView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        node?.setPosition(0, 0, w, h)
+        val padding = backdropPaddingPx
+        node?.setPosition(-padding, -padding, w + padding, h + padding)
         needsUpdate = true
     }
 
     override fun dispatchDraw(canvas: Canvas) {
-        if (supported) {
-            val n = node
-            if (n != null && !canvas.isHardwareAccelerated.not()) {
-                canvas.save()
-                canvas.drawRenderNode(n)
-                canvas.restore()
-            }
+        val n = node
+        if (supported && canvas.isHardwareAccelerated && n != null) {
+            canvas.drawRenderNode(n)
         } else {
             drawFallback(canvas)
         }
@@ -120,6 +137,7 @@ class AgslGlassView @JvmOverloads constructor(
     private fun drawFallback(canvas: Canvas) {
         path.rewind()
         path.addRoundRect(0f, 0f, width.toFloat(), height.toFloat(), cornerRadius, cornerRadius, Path.Direction.CW)
+        fallbackPaint.color = (if (frosted) 0x76 else 0x50) shl 24 or (tintColor and 0xFFFFFF)
         canvas.drawPath(path, fallbackPaint)
     }
 
@@ -131,15 +149,16 @@ class AgslGlassView @JvmOverloads constructor(
         val h = height
         if (w <= 0 || h <= 0 || target.width <= 0 || target.height <= 0) return
         val n = node ?: return
+        val padding = backdropPaddingPx
         recording = true
         try {
-            val canvas = n.beginRecording(w, h)
+            val canvas = n.beginRecording(w + padding * 2, h + padding * 2)
             // 对话框是独立 window，必须用屏幕坐标对齐，否则采到的是错位的区域（会露出黑块）
             getLocationOnScreen(location)
             target.getLocationOnScreen(sourceLocation)
             canvas.translate(
-                -(location[0] - sourceLocation[0]).toFloat(),
-                -(location[1] - sourceLocation[1]).toFloat()
+                (padding - location[0] + sourceLocation[0]).toFloat(),
+                (padding - location[1] + sourceLocation[1]).toFloat()
             )
             target.draw(canvas)
             n.endRecording()
@@ -153,14 +172,16 @@ class AgslGlassView @JvmOverloads constructor(
         val n = node ?: return
         runCatching {
             s.setFloatUniform("size", floatArrayOf(width.toFloat(), height.toFloat()))
-            s.setFloatUniform("offset", floatArrayOf(0f, 0f))
+            val captureOffset = -backdropPaddingPx.toFloat()
+            s.setFloatUniform("offset", floatArrayOf(captureOffset, captureOffset))
             s.setFloatUniform("u_time", 0f)
+            val corner = cornerRadius.coerceAtMost(minOf(width, height) / 2f)
             s.setFloatUniform(
                 "cornerRadius",
-                floatArrayOf(cornerRadius, cornerRadius, cornerRadius, cornerRadius)
+                floatArrayOf(corner, corner, corner, corner)
             )
-            s.setFloatUniform("refractionHeight", refractionHeight)
-            s.setFloatUniform("refractionAmount", refractionAmount)
+            s.setFloatUniform("refractionHeight", if (frosted) 0f else refractionHeight)
+            s.setFloatUniform("refractionAmount", if (frosted) 0f else refractionAmount)
             s.setFloatUniform("refractionAxis", floatArrayOf(1f, 0.72f))
             s.setFloatUniform("isDark", 0f)
             s.setFloatUniform("lr", 0.5f)
@@ -185,9 +206,10 @@ class AgslGlassView @JvmOverloads constructor(
             s.setFloatUniform("tintAlpha", tintAlpha)
 
             val shaderEffect = RenderEffect.createRuntimeShaderEffect(s, "rmContent")
-            val blur = if (blurRadius > 0.01f) {
+            val radius = if (frosted) maxOf(blurRadius, dp(13f)) else blurRadius
+            val blur = if (radius > 0.01f) {
                 blurEffect ?: RenderEffect.createBlurEffect(
-                    blurRadius, blurRadius, Shader.TileMode.CLAMP
+                    radius, radius, Shader.TileMode.CLAMP
                 ).also { blurEffect = it }
             } else null
             n.setRenderEffect(if (blur != null) RenderEffect.createChainEffect(shaderEffect, blur) else shaderEffect)

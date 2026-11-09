@@ -21,7 +21,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.appcompat.app.AppCompatActivity
 import com.example.liquidglass.LiquidGlassChip
-import com.example.liquidglass.LiquidGlassView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 
 class ReaderActivity : AppCompatActivity() {
@@ -106,7 +105,7 @@ class ReaderActivity : AppCompatActivity() {
         findViewById<View>(R.id.backBar).apply {
             contentDescription = backButton.contentDescription
             backButton.contentDescription = null
-            setOnClickListener { finish() }
+            setGlassClickListener { finish() }
         }
         setupBottomTabs()
 
@@ -123,22 +122,10 @@ class ReaderActivity : AppCompatActivity() {
             R.id.settingsPanel to 24f,
             R.id.progressRow to 23f
         ).forEach { (id, radiusDp) ->
-            findViewById<View>(id)?.let { view ->
-                when (view) {
-                    is AgslGlassView -> {
-                        view.backdropSource = pageView
-                        view.cornerRadius = dp(radiusDp.toInt()).toFloat()
-                        view.refractionHeight = dp(16).toFloat()
-                        view.refractionAmount = dp(24).toFloat()
-                        view.blurRadius = dp(7).toFloat()
-                        view.dispersion = 0.16f
-                        view.tintAlpha = 0.10f
-                    }
-                    is com.example.liquidglass.LiquidGlassView -> {
-                        view.backdropSource = pageView
-                        view.enableDynamicBackground = true
-                    }
-                }
+            findViewById<AgslGlassView>(id).apply {
+                backdropSource = pageView
+                useControlOptics(radiusDp)
+                tintColor = ReaderPrefs.background(theme)
             }
         }
         GlassStyle.load(this).applyTo(rootView)
@@ -208,6 +195,9 @@ class ReaderActivity : AppCompatActivity() {
         txtProgress.setTextColor(soft)
         loading.setTextColor(soft)
         findViewById<View>(R.id.root).setBackgroundColor(ReaderPrefs.background(theme))
+        listOf(R.id.topBar, R.id.backBar, R.id.bottomBar, R.id.settingsPanel, R.id.progressRow).forEach { id ->
+            findViewById<AgslGlassView>(id).tintColor = ReaderPrefs.background(theme)
+        }
         val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
         val row = toolbar.getChildAt(0) as LinearLayout
         for (index in 0 until row.childCount) {
@@ -226,20 +216,11 @@ class ReaderActivity : AppCompatActivity() {
             R.id.tabTurn to { showSettings(2) }
         )
         val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
-        val row = toolbar.getChildAt(0) as LinearLayout
         actions.forEach { (id, action) ->
             findViewById<LinearLayout>(id).apply {
                 contentDescription = (getChildAt(1) as TextView).text
                 isFocusable = true
-                setOnClickListener { action() }
-                setOnTouchListener { item, event ->
-                    // The item handles the click. The shared glass handles the liquid press.
-                    val glassEvent = MotionEvent.obtain(event)
-                    glassEvent.offsetLocation(item.x + row.x, item.y + row.y)
-                    toolbar.onTouchEvent(glassEvent)
-                    glassEvent.recycle()
-                    false
-                }
+                setGlassClickListener(toolbar) { action() }
             }
         }
     }
@@ -391,7 +372,7 @@ class ReaderActivity : AppCompatActivity() {
         }
         paintSwatches()
         themeHosts.forEach { (t, host) ->
-            host.setOnClickListener {
+            host.setGlassClickListener {
                 theme = t
                 ReaderPrefs.setTheme(this, t)
                 pageView.setTheme(t)
@@ -416,7 +397,8 @@ class ReaderActivity : AppCompatActivity() {
             chip.enableDynamicBackground = true
             chip.isCheckable = true
             chip.isChecked = mode == currentMode
-            chip.setOnClickListener {
+            chip.enablePressEffect = false
+            chip.setGlassClickListener {
                 if (mode != currentMode) {
                     currentMode = mode
                     ReaderPrefs.setTurnMode(this, mode)
@@ -462,22 +444,22 @@ class ReaderActivity : AppCompatActivity() {
             val v = (14 * resources.displayMetrics.density).toInt()
             tv.setPadding(v, v, v, v)
             tv.isClickable = true
-            tv.setOnClickListener {
+            tv.setGlassClickListener {
                 dialog.dismiss()
                 onPick?.invoke(index)
             }
             container.addView(tv)
         }
-        val cancel = content.findViewById<TextView>(R.id.cardCancel)
+        val cancel = content.findViewById<GlassActionButton>(R.id.cardCancel)
         if (!okText.isNullOrEmpty()) {
             cancel.text = okText
-            cancel.setOnClickListener {
+            cancel.setGlassClickListener {
                 dialog.dismiss()
                 onPick?.invoke(-1)
             }
         } else {
             cancel.text = "取消"
-            cancel.setOnClickListener { dialog.dismiss() }
+            cancel.setGlassClickListener { dialog.dismiss() }
         }
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = 26 * resources.displayMetrics.density
@@ -497,11 +479,11 @@ class ReaderActivity : AppCompatActivity() {
             chapterScroll.layoutParams.height = maxListHeight
         }
 
-        val glass = com.example.liquidglass.LiquidGlassView(this)
-        glass.cornerRadius = 26 * resources.displayMetrics.density
-        glass.blurAmount = 0.18f
-        glass.material = com.example.liquidglass.GlassMaterial.REGULAR
-        GlassStyle.load(this).applyTo(glass)
+        val glass = AgslGlassView(this).apply {
+            useControlOptics(26f)
+            backdropSource = pageView
+        }
+        cancel.backdropSource = pageView
         glass.addView(content, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
@@ -514,8 +496,7 @@ class ReaderActivity : AppCompatActivity() {
         dialogWindow?.setGravity(Gravity.CENTER)
         dialog.show()
         dialogWindow?.setLayout(dialogWidth, FrameLayout.LayoutParams.WRAP_CONTENT)
-        glass.backdropSource = findViewById(android.R.id.content)
-        glass.enableDynamicBackground = true
+        GlassStyle.load(this).applyTo(glass)
     }
     private var progressDialog: Dialog? = null
     private var progressSeek: SeekBar? = null

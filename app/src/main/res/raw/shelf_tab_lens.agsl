@@ -4,11 +4,6 @@ uniform float2 halfSize;
 uniform float bevel;
 uniform float lift;
 
-half3 sampleTabs(float2 at, half3 backdrop) {
-    half4 glyph = tabs.eval(at);
-    return glyph.rgb + backdrop * (1.0 - glyph.a);
-}
-
 half4 main(float2 pixel) {
     float radius = min(halfSize.x, halfSize.y);
     float2 p = pixel - center;
@@ -17,16 +12,30 @@ half4 main(float2 pixel) {
     float coverage = 1.0 - smoothstep(-0.75, 0.75, distance);
     if (coverage <= 0.0) return half4(0.0);
 
-    float2 normal = sign(p) * max(edge, 0.0);
-    normal /= max(length(normal), 0.001);
-    float rim = 1.0 - smoothstep(0.0, bevel, max(0.0, -distance));
-    float2 displacement = normal * rim * rim * bevel * lift;
-    float2 samplePoint = center + p / (1.0 + 0.10 * lift) + displacement;
-    half3 backdrop = mix(half3(0.918, 0.906, 0.894), half3(0.985, 0.982, 0.978), lift);
-    half3 color = sampleTabs(samplePoint, backdrop);
-    color.r = sampleTabs(samplePoint + displacement * 0.17, backdrop).r;
-    color.b = sampleTabs(samplePoint - displacement * 0.17, backdrop).b;
-    float outline = 1.0 - smoothstep(0.0, 1.7, max(0.0, -distance));
-    color += lift * (0.046 * rim * (1.0 - outline) - 0.15 * outline);
-    return half4(clamp(color, 0.0, 1.0) * coverage, coverage);
+    float2 gradient = max(edge, 0.0);
+    if (length(gradient) < 0.001) {
+        gradient = edge.x > edge.y ? float2(1.0, 0.0) : float2(0.0, 1.0);
+    }
+    float2 side = step(float2(0.0), p) * 2.0 - 1.0;
+    float2 normal = normalize(gradient) * side;
+    float depth = max(0.0, -distance);
+    float rim = clamp(1.0 - depth / bevel, 0.0, 1.0);
+    float curve = 1.0 - sqrt(max(0.0, 1.0 - rim * rim));
+    float2 displacement = normal * curve * bevel * lift;
+    float2 samplePoint = pixel + displacement;
+
+    half4 glyph = tabs.eval(samplePoint);
+    half4 red = tabs.eval(samplePoint + displacement * 0.19);
+    half4 blue = tabs.eval(samplePoint - displacement * 0.19);
+    half3 coloredGlyph = half3(red.r, glyph.g, blue.b);
+    half glyphAlpha = max(max(red.a, glyph.a), blue.a);
+
+    float light = max(dot(normal, normalize(float2(-0.28, -0.96))), 0.0);
+    float edgeGlow = (1.0 - smoothstep(0.0, bevel * 0.3, depth)) * (0.08 + 0.20 * light);
+    float contour = 1.0 - smoothstep(0.0, 1.7, depth);
+    half tintAlpha = mix(0.125, 0.18 + edgeGlow + contour * 0.12, lift);
+    half3 tint = mix(half3(0.17, 0.14, 0.11), half3(1.0 - contour * 0.36), lift);
+    half remaining = 1.0 - glyphAlpha;
+    half3 color = coloredGlyph + tint * tintAlpha * remaining;
+    return half4(color, glyphAlpha + tintAlpha * remaining) * coverage;
 }

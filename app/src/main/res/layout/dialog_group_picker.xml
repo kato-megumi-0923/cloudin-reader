@@ -79,7 +79,7 @@
             android:orientation="vertical" />
     </ScrollView>
 
-    <TextView
+    <com.cloudin.reader.GlassActionButton
         android:id="@+id/btnCancelGroup"
         android:layout_width="match_parent"
         android:layout_height="54dp"
@@ -87,10 +87,9 @@
         android:layout_marginTop="12dp"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="16dp"
-        android:background="@drawable/bg_glass_button_neutral"
         android:gravity="center"
         android:text="取消"
-        android:textColor="#FFFFFF"
+        android:textColor="@color/shelf_title"
         android:textSize="16sp" />
 
 </LinearLayout>

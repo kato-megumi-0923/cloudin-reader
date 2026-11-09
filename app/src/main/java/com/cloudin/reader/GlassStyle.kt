@@ -21,6 +21,7 @@ internal enum class GlassStyle(val label: Int) {
                 return
             }
             is LiquidGlassView -> applyToGlass(view)
+            is AgslGlassView -> view.frosted = this == FROSTED
         }
         if (view is ViewGroup) view.children.forEach { applyTo(it) }
     }

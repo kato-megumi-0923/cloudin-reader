@@ -51,14 +51,22 @@ class ShelfTabBar @JvmOverloads constructor(
         enableEdgeHighlight = false
         blurAmount = 0.38f
         saturation = 105f
-        glassTint = 0xE8FAFAFB.toInt()
+        glassTint = 0x60FAFAFB
         cornerRadius = dp(100).toFloat()
+    }
+    private val opticalSurface = AgslGlassView(context).takeIf { it.isShaderSupported }?.apply {
+        cornerRadius = dp(28).toFloat()
+        refractionHeight = dp(7).toFloat()
+        refractionAmount = dp(9).toFloat()
+        blurRadius = dp(9).toFloat()
+        tintAlpha = 0.24f
     }
     private val tabs = mutableListOf<LinearLayout>()
     private val accent = context.getColor(R.color.shelf_tab_selected)
     private val ink = context.getColor(R.color.ink)
     private val renderer = TabLensRenderer(context, accent)
     private val selection = RectF()
+    private val selectionShape = Path()
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private val easeOut = DecelerateInterpolator(1.65f)
     private val rebound = OvershootInterpolator(1.45f)
@@ -75,6 +83,10 @@ class ShelfTabBar @JvmOverloads constructor(
     private var lensY = 0f
     private var lift = 0f
     private var stretch = 1f
+    private var trackPullX = 0f
+    private var trackPullY = 0f
+    private var trackBounce = 0f
+    private var trackTapBounce = 0f
     private val hold = Runnable {
         if (pointer != MotionEvent.INVALID_POINTER_ID && isShown) beginDrag()
     }
@@ -83,23 +95,32 @@ class ShelfTabBar @JvmOverloads constructor(
         set(value) {
             field = value
             surface.blurAmount = if (value == GlassStyle.FROSTED) 0.55f else 0.38f
+            updateSurfaceVisibility()
             invalidate()
         }
 
     var onTabSelected: ((Int) -> Unit)? = null
-    var selectedIndex = 0
+    private var activeIndex = 0
+    var selectedIndex: Int
+        get() = activeIndex
         set(value) {
-            if (value !in tabs.indices || field == value) return
-            field = value
-            tabs.forEachIndexed { index, tab -> tab.isSelected = index == value }
-            settle()
+            if (updateSelection(value)) settle()
         }
+
+    private fun updateSelection(index: Int): Boolean {
+        if (index !in tabs.indices || index == activeIndex) return false
+        activeIndex = index
+        tabs.forEachIndexed { position, tab -> tab.isSelected = position == index }
+        return true
+    }
 
     init {
         // Reserve space inside the view for the lifted lens so HWUI cannot crop its rim.
         clipToPadding = false
         setPadding(dp(32), dp(32), dp(32), dp(16))
         addView(surface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        opticalSurface?.let { addView(it, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)) }
+        updateSurfaceVisibility()
         addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
             marginStart = dp(4)
             marginEnd = dp(4)
@@ -108,6 +129,14 @@ class ShelfTabBar @JvmOverloads constructor(
 
     fun setBackdropSource(view: View) {
         surface.backdropSource = view
+        opticalSurface?.backdropSource = view
+    }
+
+    private fun updateSurfaceVisibility() {
+        val optical = opticalSurface ?: return
+        val liquid = glassStyle == GlassStyle.LIQUID
+        optical.visibility = if (liquid) VISIBLE else INVISIBLE
+        surface.visibility = if (liquid) INVISIBLE else VISIBLE
     }
 
     fun setTabs(items: List<Tab>) {
@@ -157,6 +186,7 @@ class ShelfTabBar @JvmOverloads constructor(
 
     override fun dispatchDraw(canvas: Canvas) {
         if (tabs.isEmpty() || width == 0 || height == 0) {
+            selectionShape.rewind()
             super.dispatchDraw(canvas)
             return
         }
@@ -167,12 +197,41 @@ class ShelfTabBar @JvmOverloads constructor(
             }
             sourceDirty = false
         }
-        super.dispatchDraw(canvas)
         val tabWidth = tabs[selectedIndex].width.toFloat()
+        val trackCenterX = (surface.left + surface.right) / 2f
+        val trackCenterY = rowCenterY
+        val trackScaleX = 1f + lift * (0.043f + 0.018f * abs(trackPullX)) +
+            0.025f * trackBounce + 0.058f * trackTapBounce
+        val trackScaleY = 1f + lift * (0.027f + 0.026f * abs(trackPullY)) -
+            0.018f * trackBounce + 0.072f * trackTapBounce
+        val trackOffsetX = dp(4) * trackPullX * lift
+        val trackOffsetY = dp(4) * trackPullY * lift + dp(2) * trackBounce
+        // Keep the lens under the finger while the track and its labels move beneath it.
+        val followsDrag = dragging || lift > 0f
+        val centerX = if (followsDrag) trackCenterX + (lensX - trackCenterX - trackOffsetX) / trackScaleX else lensX
+        val centerY = if (followsDrag) trackCenterY + (lensY - trackCenterY - trackOffsetY) / trackScaleY else lensY
         val halfWidth = tabWidth * (0.49f + 0.25f * lift) * stretch
         val halfHeight = ((row.height / 2f - dp(4)) + dp(9) * lift) * (1f - (stretch - 1f) * 0.48f)
-        selection.set(lensX - halfWidth, lensY - halfHeight, lensX + halfWidth, lensY + halfHeight)
-        renderer.draw(canvas, selection, lift, glassStyle == GlassStyle.LIQUID)
+        selection.set(centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight)
+        selectionShape.rewind()
+        val radius = minOf(halfWidth, halfHeight)
+        selectionShape.addRoundRect(selection, radius, radius, Path.Direction.CW)
+        val save = canvas.save()
+        canvas.translate(trackOffsetX, trackOffsetY)
+        canvas.scale(trackScaleX, trackScaleY, trackCenterX, trackCenterY)
+        super.dispatchDraw(canvas)
+        renderer.draw(canvas, selection, selectionShape, lift, glassStyle == GlassStyle.LIQUID)
+        canvas.restoreToCount(save)
+    }
+
+    override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+        if (child !== row || selectionShape.isEmpty) return super.drawChild(canvas, child, drawingTime)
+        // The lens draws the selected glyphs in this area. Leaving the normal glyphs would double them.
+        val save = canvas.save()
+        canvas.clipOutPath(selectionShape)
+        val drawn = super.drawChild(canvas, child, drawingTime)
+        canvas.restoreToCount(save)
+        return drawn
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -209,25 +268,22 @@ class ShelfTabBar @JvmOverloads constructor(
                     isOnTrack(touchX, touchY)
                 }
                 if (dragging && canSelect) positionLens()
-                endGesture()
                 if (canSelect) {
                     val target = tabs.indices.minBy { abs(touchX - centerOf(it)) }
                     tabs[target].performClick()
                 } else {
                     settle()
                 }
+                endGesture()
             }
         }
         return true
     }
 
     private fun select(index: Int) {
-        if (selectedIndex == index) {
-            settle()
-        } else {
-            selectedIndex = index
-            onTabSelected?.invoke(index)
-        }
+        val changed = updateSelection(index)
+        settle(tapped = !dragging)
+        if (changed) onTabSelected?.invoke(index)
     }
 
     private fun beginDrag() {
@@ -235,7 +291,13 @@ class ShelfTabBar @JvmOverloads constructor(
         dragging = true
         positionLens()
         val initialLift = lift
-        animateMotion(165) { progress -> lift = lerp(initialLift, 1f, progress) }
+        val initialBounce = trackBounce
+        val initialTapBounce = trackTapBounce
+        animateMotion(165) { progress ->
+            lift = lerp(initialLift, 1f, progress)
+            trackBounce = lerp(initialBounce, 0f, progress)
+            trackTapBounce = lerp(initialTapBounce, 0f, progress)
+        }
     }
 
     private fun positionLens() {
@@ -246,6 +308,8 @@ class ShelfTabBar @JvmOverloads constructor(
         val vertical = ((touchY - downY) / row.height).coerceIn(-1f, 1f)
         lensY = rowCenterY + row.height * 0.20f * vertical
         stretch = 1f - 0.20f * abs(vertical)
+        trackPullX = ((touchX - downX) / (row.width * 0.65f)).coerceIn(-1f, 1f)
+        trackPullY = vertical
         invalidate()
     }
 
@@ -255,22 +319,29 @@ class ShelfTabBar @JvmOverloads constructor(
         dragging = false
     }
 
-    private fun settle() {
+    private fun settle(tapped: Boolean = false) {
         val endX = centerOf(selectedIndex)
         val endY = rowCenterY
         val startX = lensX
         val startY = lensY
         val startLift = lift
         val startStretch = stretch
+        val startPullX = trackPullX
+        val startPullY = trackPullY
+        val startBounce = trackBounce
+        val startTapBounce = trackTapBounce
         val travel = endX - startX
-        if (travel == 0f && startY == endY && startLift == 0f && startStretch == 1f) {
-            motion?.cancel()
+        val trackIsResting = startPullX == 0f && startPullY == 0f && startBounce == 0f && startTapBounce == 0f
+        if (!tapped && travel == 0f && startY == endY && startLift == 0f && startStretch == 1f && trackIsResting) {
+            resetMotion()
             return
         }
 
         val lifted = startLift > 0f
         val overshootLimit = dp(7).toFloat()
-        val pulse = if (lifted) 0.15f else 0.41f
+        val pulse = if (lifted) 0.15f else if (travel != 0f) 0.41f else 0f
+        val trackImpulse = if (lifted && !tapped) 1.25f else 0f
+        val tapImpulse = if (tapped) 1f else 0f
         animateMotion(if (lifted) 380 else 350, linear) { time ->
             val position = rebound.getInterpolation(time)
             val overshoot = (travel * (position - 1f)).coerceIn(-overshootLimit, overshootLimit)
@@ -281,6 +352,10 @@ class ShelfTabBar @JvmOverloads constructor(
             // Stretch in the direction of travel, then briefly compress before settling.
             val oscillation = sin(2f * Math.PI.toFloat() * time) * (1f - time)
             stretch = if (time < 1f) lerp(startStretch, 1f, settle) + pulse * oscillation else 1f
+            trackPullX = lerp(startPullX, 0f, settle)
+            trackPullY = lerp(startPullY, 0f, settle)
+            trackBounce = lerp(startBounce, 0f, settle) + trackImpulse * oscillation
+            trackTapBounce = lerp(startTapBounce, 0f, settle) + tapImpulse * oscillation
         }
     }
 
@@ -317,6 +392,10 @@ class ShelfTabBar @JvmOverloads constructor(
         motion = null
         lift = 0f
         stretch = 1f
+        trackPullX = 0f
+        trackPullY = 0f
+        trackBounce = 0f
+        trackTapBounce = 0f
         lensX = centerOf(selectedIndex)
         lensY = rowCenterY
     }
@@ -336,7 +415,6 @@ class ShelfTabBar @JvmOverloads constructor(
 private class TabLensRenderer(context: Context, accent: Int) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val accentFilter = Paint().apply { colorFilter = PorterDuffColorFilter(accent, PorterDuff.Mode.SRC_IN) }
-    private val shape = Path()
     private var source: BitmapShader? = null
     private val lens = if (Build.VERSION.SDK_INT >= 33) {
         runCatching { OpticalLens(context) }.getOrNull()
@@ -353,18 +431,15 @@ private class TabLensRenderer(context: Context, accent: Int) {
         }
     }
 
-    fun draw(canvas: Canvas, bounds: RectF, lift: Float, liquid: Boolean) {
+    fun draw(canvas: Canvas, bounds: RectF, shape: Path, lift: Float, liquid: Boolean) {
         val texture = source ?: return
         if (Build.VERSION.SDK_INT >= 33 && lift > 0f && liquid && canvas.isHardwareAccelerated && lens != null) {
             lens.draw(canvas, bounds, lift, paint)
             return
         }
-        val radius = bounds.height() / 2f
-        shape.rewind()
-        shape.addRoundRect(bounds, radius, radius, Path.Direction.CW)
         val save = canvas.save()
         canvas.clipPath(shape)
-        canvas.drawColor(0xFFEAE7E4.toInt())
+        canvas.drawColor(if (lift > 0f) 0x49FFFFFF else 0x202B241C)
         paint.shader = texture
         canvas.drawRect(bounds, paint)
         paint.shader = null

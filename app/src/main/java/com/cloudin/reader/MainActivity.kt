@@ -36,8 +36,6 @@ import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.example.liquidglass.LiquidGlassButton
-import com.example.liquidglass.LiquidGlassView
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -54,12 +52,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var empty: TextView
     private lateinit var adapter: BookshelfAdapter
     private lateinit var title: TextView
-    private lateinit var btnBack: TextView
+    private lateinit var btnBack: GlassActionButton
     private lateinit var actionSheet: View
     private lateinit var selectionActions: View
     private lateinit var actions: View
-    private lateinit var btnMode: LiquidGlassButton
-    private lateinit var btnFormat: LiquidGlassButton
+    private lateinit var btnMode: GlassActionButton
+    private lateinit var btnFormat: GlassActionButton
     private lateinit var bottomBarView: View
     private lateinit var profilePage: View
 
@@ -142,28 +140,24 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val headerBackdrop = findViewById<View>(R.id.bgLayer)
-        listOf(R.id.btnMode, R.id.btnFormat, R.id.btnSearch, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
+        listOf(R.id.btnBack, R.id.btnMode, R.id.btnFormat, R.id.btnSearch, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
             .forEach { id ->
-                findViewById<LiquidGlassButton>(id).apply {
+                findViewById<GlassActionButton>(id).apply {
                     backdropSource = headerBackdrop
-                    enableDynamicBackground = true
                     val horizontalPadding = when (id) {
-                        R.id.btnMode, R.id.btnImport -> 0
+                        R.id.btnBack, R.id.btnMode, R.id.btnImport -> 0
                         R.id.btnFormat, R.id.btnSearch -> dp(10)
                         else -> dp(14)
                     }
                     textView.setPadding(horizontalPadding, 0, horizontalPadding, 0)
                 }
             }
-        listOf(R.id.actPin, R.id.actGroup, R.id.actRemove).forEach { id ->
-            findViewById<LiquidGlassButton>(id).apply {
-                backdropSource = root
-                enableDynamicBackground = true
-                textView.setPadding(dp(14), 0, dp(14), 0)
-            }
+        findViewById<AgslGlassView>(R.id.actionSheet).apply {
+            useControlOptics(28f)
+            backdropSource = root.findViewById(R.id.shelfBackdrop)
         }
         findViewById<ShelfTabBar>(R.id.bottomBar).apply {
-            setBackdropSource(root)
+            setBackdropSource(root.findViewById(R.id.shelfBackdrop))
             setTabs(
                 listOf(
                     ShelfTabBar.Tab(getString(R.string.shelf), R.drawable.ic_tab_shelf),
@@ -199,26 +193,25 @@ class MainActivity : AppCompatActivity() {
         recycler.addOnItemTouchListener(ShelfDragSelection(recycler, adapter))
         applyLayoutMode()
 
-        findViewById<View>(R.id.btnImport).setOnClickListener { showAddMenu(it) }
-        findViewById<LiquidGlassButton>(R.id.btnSearch).apply {
+        findViewById<View>(R.id.btnImport).setGlassClickListener { showAddMenu(it) }
+        findViewById<GlassActionButton>(R.id.btnSearch).apply {
             text = ""
             textView.visibility = View.GONE
-            val icon = ShadowIconView(
-                this@MainActivity,
-                "M380-320q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l224 224q11 11 11 28t-11 28q-11 11-28 11t-28-11L532-372q-30 24-69 38t-83 14Zm0-80q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z",
-                960f
-            )
+            val icon = android.widget.ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_header_search)
+                setColorFilter(getColor(R.color.shelf_title))
+            }
             addView(icon, android.widget.FrameLayout.LayoutParams(dp(22), dp(22), android.view.Gravity.CENTER))
-            setOnClickListener { startActivity(SearchActivity.intent(this@MainActivity)) }
+            setGlassClickListener { startActivity(SearchActivity.intent(this@MainActivity)) }
         }
-        findViewById<View>(R.id.btnCancelSelect).setOnClickListener { exitSelecting() }
-        findViewById<View>(R.id.btnSelectAll).setOnClickListener { toggleSelectAll() }
-        findViewById<View>(R.id.actGroup).setOnClickListener { showGroupPicker() }
-        findViewById<View>(R.id.actPin).setOnClickListener { pinSelected() }
-        findViewById<View>(R.id.actRemove).setOnClickListener { deleteSelected() }
-        btnMode.setOnClickListener { toggleLayout() }
-        btnFormat.setOnClickListener { showFormatMenu() }
-        btnBack.setOnClickListener { closeFolder() }
+        findViewById<View>(R.id.btnCancelSelect).setGlassClickListener { exitSelecting() }
+        findViewById<View>(R.id.btnSelectAll).setGlassClickListener { toggleSelectAll() }
+        findViewById<View>(R.id.actGroup).setGlassClickListener(actionSheet) { showGroupPicker() }
+        findViewById<View>(R.id.actPin).setGlassClickListener(actionSheet) { pinSelected() }
+        findViewById<View>(R.id.actRemove).setGlassClickListener(actionSheet) { deleteSelected() }
+        btnMode.setGlassClickListener { toggleLayout() }
+        btnFormat.setGlassClickListener { showFormatMenu() }
+        btnBack.setGlassClickListener { closeFolder() }
 
         recycler.post {
             recycler.setPadding(dp(4), dp(6), dp(4), 0)
@@ -333,6 +326,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchTab(tab: Tab) {
         if (currentTab == tab && currentGroup == null) return
+        hideHeaderMenu()
         val previous = currentTab
         currentTab = tab
         currentGroup = null
@@ -515,7 +509,7 @@ class MainActivity : AppCompatActivity() {
         val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
         val cardTitle = content.findViewById<TextView>(R.id.cardTitle)
         val rows = content.findViewById<LinearLayout>(R.id.cardRows)
-        val back = content.findViewById<LiquidGlassButton>(R.id.cardBack)
+        val back = content.findViewById<GlassActionButton>(R.id.cardBack)
         val backdrop = findViewById<View>(R.id.root)
         val color = getColor(R.color.shelf_title)
         val settings = listOf(
@@ -604,7 +598,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        back.setOnClickListener { goBack() }
+        back.setGlassClickListener { goBack() }
         dialog.onBackPressedDispatcher.addCallback(dialog) { goBack() }
         dialog.setCanceledOnTouchOutside(true)
         render(null)
@@ -664,7 +658,12 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
         dialog.window?.setLayout(dp(345), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setGravity(Gravity.CENTER)
-        glass.backdropSource = findViewById(R.id.root)
+        val backdrop = findViewById<View>(R.id.root)
+        glass.backdropSource = backdrop
+        listOf(R.id.cardCancel, R.id.btnCancelGroup).forEach { id ->
+            content.findViewById<GlassActionButton>(id)?.backdropSource = backdrop
+        }
+        GlassStyle.load(this).applyTo(glass)
     }
 
     private fun addCardRow(
@@ -710,7 +709,7 @@ class MainActivity : AppCompatActivity() {
                 onPick(index)
             }
         }
-        content.findViewById<View>(R.id.cardCancel).setOnClickListener { dialog.dismiss() }
+        content.findViewById<View>(R.id.cardCancel).setGlassClickListener { dialog.dismiss() }
         showCard(dialog, content)
     }
 
@@ -726,7 +725,7 @@ class MainActivity : AppCompatActivity() {
             dialog.dismiss()
             deleteGroupDialog(group)
         }
-        content.findViewById<View>(R.id.cardCancel).setOnClickListener { dialog.dismiss() }
+        content.findViewById<View>(R.id.cardCancel).setGlassClickListener { dialog.dismiss() }
         showCard(dialog, content)
     }
 
@@ -736,9 +735,9 @@ class MainActivity : AppCompatActivity() {
         content.findViewById<TextView>(R.id.cardTitle).text = "新建分组"
         val input = content.findViewById<EditText>(R.id.cardInput)
         input.visibility = View.VISIBLE
-        val save = content.findViewById<TextView>(R.id.cardCancel)
+        val save = content.findViewById<GlassActionButton>(R.id.cardCancel)
         save.text = "创建"
-        save.setOnClickListener {
+        save.setGlassClickListener {
             val name = input.text.toString().trim()
             if (name.isNotEmpty()) {
                 GroupStore.add(this, name)
@@ -757,9 +756,9 @@ class MainActivity : AppCompatActivity() {
         input.visibility = View.VISIBLE
         input.setText(group.name)
         input.setSelection(group.name.length)
-        val save = content.findViewById<TextView>(R.id.cardCancel)
+        val save = content.findViewById<GlassActionButton>(R.id.cardCancel)
         save.text = "保存"
-        save.setOnClickListener {
+        save.setGlassClickListener {
             val name = input.text.toString().trim()
             if (name.isNotEmpty()) {
                 GroupStore.rename(this, group.id, name)
@@ -826,7 +825,7 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(2); bottomMargin = dp(8) }
         )
-        content.findViewById<View>(R.id.cardCancel).setOnClickListener { dialog.dismiss() }
+        content.findViewById<View>(R.id.cardCancel).setGlassClickListener { dialog.dismiss() }
         showCard(dialog, content)
     }
     private fun showGroupPicker() {
@@ -853,7 +852,7 @@ class MainActivity : AppCompatActivity() {
             close()
         }
 
-        content.findViewById<View>(R.id.btnCancelGroup).setOnClickListener { close() }
+        content.findViewById<View>(R.id.btnCancelGroup).setGlassClickListener { close() }
 
         if (groups.isEmpty()) {
             val hint = TextView(this).apply {
@@ -918,6 +917,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showBottomBar(bar: View) {
+        bar.resetGlassPressMotion()
         bar.animate().cancel()
         bar.alpha = 0f
         bar.translationY = dp(24).toFloat()
@@ -933,7 +933,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateSelectionUi(count: Int) {
         title.text = if (adapter.selecting) "已选 $count 本" else getString(R.string.shelf)
-        findViewById<LiquidGlassButton>(R.id.btnSelectAll).text =
+        findViewById<GlassActionButton>(R.id.btnSelectAll).text =
             if (adapter.allSelected()) "取消全选" else "全选"
         updatePinAction()
     }
@@ -947,7 +947,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePinAction() {
         val unpin = selectedAllPinned()
-        findViewById<LiquidGlassButton>(R.id.actPin)?.text = if (unpin) "取消置顶" else "置顶"
+        findViewById<TextView>(R.id.actPin)?.text = if (unpin) "取消置顶" else "置顶"
     }
 
     private fun pinSelected() {
@@ -997,15 +997,14 @@ class MainActivity : AppCompatActivity() {
         selectedIndex: Int = -1
     ) {
         val scrim = findViewById<View>(R.id.menuScrim)
-        val panel = findViewById<LiquidGlassView>(R.id.menuPanel)
+        val panel = findViewById<AgslGlassView>(R.id.menuPanel)
         if (panel.visibility == View.VISIBLE) {
             hideHeaderMenu()
             return
         }
         panel.apply {
-            backdropSource = findViewById(R.id.bgLayer)
-            enableDynamicBackground = true
-            cornerRadius = dp(24).toFloat()
+            backdropSource = this@MainActivity.findViewById(R.id.shelfBackdrop)
+            useControlOptics(24f)
         }
         val isRtl = actions.layoutDirection == View.LAYOUT_DIRECTION_RTL
         panel.updateLayoutParams<FrameLayout.LayoutParams> {
@@ -1023,7 +1022,7 @@ class MainActivity : AppCompatActivity() {
             val v = dp(13)
             tv.setPadding(v, v, v, v)
             tv.isClickable = true
-            tv.setOnClickListener {
+            tv.setGlassClickListener {
                 if (scrim.isEnabled) {
                     hideHeaderMenu()
                     action()

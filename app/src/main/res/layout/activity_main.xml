@@ -2,130 +2,141 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
+    android:clipChildren="false"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     >
 
-    <View
-        android:id="@+id/bgLayer"
+    <FrameLayout
+        android:id="@+id/shelfBackdrop"
+        android:clipChildren="false"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@drawable/bg_aurora" />
+        android:layout_height="match_parent">
 
-    <LinearLayout
-        android:id="@+id/contentLayer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
+        <View
+            android:id="@+id/bgLayer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_aurora" />
 
         <LinearLayout
-            android:id="@+id/header"
+            android:id="@+id/contentLayer"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="52dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="10dp"
-            android:paddingEnd="8dp">
-
-            <TextView
-                android:id="@+id/btnBack"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:gravity="center"
-                android:text="&#8249;"
-                android:textColor="@color/shelf_title"
-                android:textSize="24sp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:paddingStart="12dp"
-                android:text="@string/shelf"
-                android:textColor="@color/shelf_title"
-                android:textSize="20sp"
-                android:textStyle="bold" />
+            android:layout_height="match_parent"
+            android:orientation="vertical">
 
             <LinearLayout
-                android:id="@+id/actions"
-                android:layout_width="wrap_content"
+                android:id="@+id/header"
+                android:clipChildren="false"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <com.example.liquidglass.LiquidGlassButton
-                    android:id="@+id/btnMode"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="4dp"
-                    android:text="&#9776;"
-                    android:textSize="16sp"
-                    app:cornerRadius="999dp" />
-
-                <com.example.liquidglass.LiquidGlassButton
-                    android:id="@+id/btnFormat"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="6dp"
-                    android:textSize="13sp"
-                    app:cornerRadius="999dp" />
-
-                <com.example.liquidglass.LiquidGlassButton
-                    android:id="@+id/btnSearch"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="6dp"
-                    android:contentDescription="搜索"
-                    app:cornerRadius="999dp" />
-
-                <com.example.liquidglass.LiquidGlassButton
-                    android:id="@+id/btnImport"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="6dp"
-                    android:text="&#65291;"
-                    android:textSize="20sp"
-                    app:cornerRadius="999dp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/selectionActions"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:minHeight="52dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:visibility="gone">
+                android:paddingStart="10dp"
+                android:paddingEnd="8dp">
 
-                <com.example.liquidglass.LiquidGlassButton
-                    android:id="@+id/btnSelectAll"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:text="全选"
-                    android:textSize="13sp"
-                    app:cornerRadius="999dp" />
+                <com.cloudin.reader.GlassActionButton
+                    android:id="@+id/btnBack"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="&#8249;"
+                    android:textColor="@color/shelf_title"
+                    android:textSize="24sp"
+                    android:visibility="gone" />
 
-                <com.example.liquidglass.LiquidGlassButton
-                    android:id="@+id/btnCancelSelect"
+                <TextView
+                    android:id="@+id/title"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:paddingStart="12dp"
+                    android:text="@string/shelf"
+                    android:textColor="@color/shelf_title"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:id="@+id/actions"
+                    android:clipChildren="false"
                     android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="6dp"
-                    android:text="取消"
-                    android:textSize="13sp"
-                    app:cornerRadius="999dp" />
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.cloudin.reader.GlassActionButton
+                        android:id="@+id/btnMode"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="4dp"
+                        android:text="&#9776;"
+                        android:textSize="16sp"
+                        app:cornerRadius="999dp" />
+
+                    <com.cloudin.reader.GlassActionButton
+                        android:id="@+id/btnFormat"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="6dp"
+                        android:textSize="13sp"
+                        app:cornerRadius="999dp" />
+
+                    <com.cloudin.reader.GlassActionButton
+                        android:id="@+id/btnSearch"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="6dp"
+                        android:contentDescription="搜索"
+                        app:cornerRadius="999dp" />
+
+                    <com.cloudin.reader.GlassActionButton
+                        android:id="@+id/btnImport"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="6dp"
+                        android:text="&#65291;"
+                        android:textSize="20sp"
+                        app:cornerRadius="999dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/selectionActions"
+                    android:clipChildren="false"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <com.cloudin.reader.GlassActionButton
+                        android:id="@+id/btnSelectAll"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:text="全选"
+                        android:textSize="13sp"
+                        app:cornerRadius="999dp" />
+
+                    <com.cloudin.reader.GlassActionButton
+                        android:id="@+id/btnCancelSelect"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="6dp"
+                        android:text="取消"
+                        android:textSize="13sp"
+                        app:cornerRadius="999dp" />
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
 
-        <FrameLayout
-            android:id="@+id/container"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-    </LinearLayout>
+            <FrameLayout
+                android:id="@+id/container"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+        </LinearLayout>
+    </FrameLayout>
 
     <View
         android:id="@+id/menuScrim"
@@ -136,7 +147,7 @@
         android:focusable="true"
         android:visibility="gone" />
 
-    <com.example.liquidglass.LiquidGlassView
+    <com.cloudin.reader.AgslGlassView
         android:id="@+id/menuPanel"
         android:layout_width="128dp"
         android:layout_height="wrap_content"
@@ -151,7 +162,7 @@
             android:orientation="vertical"
             android:paddingTop="8dp"
             android:paddingBottom="8dp" />
-    </com.example.liquidglass.LiquidGlassView>
+    </com.cloudin.reader.AgslGlassView>
 
 
     <com.cloudin.reader.ShelfTabBar
@@ -159,37 +170,58 @@
         android:layout_width="304dp"
         android:layout_height="104dp"
         android:layout_gravity="bottom|center_horizontal" />
-    <LinearLayout
+    <com.cloudin.reader.AgslGlassView
         android:id="@+id/actionSheet"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="16dp"
-        android:orientation="horizontal"
         android:visibility="gone">
 
-        <com.example.liquidglass.LiquidGlassButton
-            android:id="@+id/actPin"
+        <LinearLayout
             android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:text="置顶"
-            android:textSize="13sp" />
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal">
 
-        <com.example.liquidglass.LiquidGlassButton
-            android:id="@+id/actGroup"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginStart="6dp"
-            android:text="分组到…"
-            android:textSize="13sp" />
+            <TextView
+                android:id="@+id/actPin"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:textColor="@color/shelf_title"
+                android:textStyle="bold"
+                android:text="置顶"
+                android:textSize="13sp" />
 
-        <com.example.liquidglass.LiquidGlassButton
-            android:id="@+id/actRemove"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginStart="6dp"
-            android:text="移出书架"
-            android:textSize="13sp" />
-    </LinearLayout>
+            <TextView
+                android:id="@+id/actGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:textColor="@color/shelf_title"
+                android:textStyle="bold"
+                android:layout_marginStart="6dp"
+                android:text="分组到…"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/actRemove"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:textColor="@color/shelf_title"
+                android:textStyle="bold"
+                android:layout_marginStart="6dp"
+                android:text="移出书架"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </com.cloudin.reader.AgslGlassView>
 
 </FrameLayout>

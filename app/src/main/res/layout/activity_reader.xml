@@ -2,6 +2,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
+    android:clipChildren="false"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/reader_bg">
@@ -23,6 +24,7 @@
     <!-- 顶部：返回胶囊 + 标题胶囊，各自独立玻璃 -->
     <LinearLayout
         android:id="@+id/topArea"
+        android:clipChildren="false"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
@@ -96,6 +98,7 @@
     <!-- 底部：设置面板 + 悬浮胶囊工具栏 -->
     <LinearLayout
         android:id="@+id/bottomArea"
+        android:clipChildren="false"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"

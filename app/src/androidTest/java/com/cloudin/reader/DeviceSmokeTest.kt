@@ -16,7 +16,6 @@ import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import androidx.recyclerview.widget.RecyclerView
 import com.example.liquidglass.LiquidGlassChip
-import com.example.liquidglass.LiquidGlassView
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -216,11 +215,11 @@ class DeviceSmokeTest {
                 instrumentation.runOnMainSync {
                     try {
                         activity.findViewById<PageView>(R.id.pageView).onCenterTap?.invoke()
-                        val toolbar = activity.findViewById<LiquidGlassView>(R.id.bottomBar)
+                        val toolbar = activity.findViewById<AgslGlassView>(R.id.bottomBar)
                         assertTrue(toolbar.isShown)
                         fun click(id: Int) {
                             val button = toolbar.findViewById<View>(id)
-                            assertFalse(button is LiquidGlassView)
+                            assertFalse(button is AgslGlassView)
                             assertTrue(button.isShown)
                             assertTrue(button.performClick())
                         }
