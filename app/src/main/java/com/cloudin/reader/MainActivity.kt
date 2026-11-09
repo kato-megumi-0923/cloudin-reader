@@ -458,14 +458,7 @@ class MainActivity : AppCompatActivity() {
         profilePage.findViewById<View>(R.id.profileStats).setOnClickListener {
             openProfilePage(ReadingStatsActivity::class.java)
         }
-        profilePage.findViewById<View>(R.id.profileAbout).setOnClickListener {
-            val version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
-            AlertDialog.Builder(this)
-                .setTitle(R.string.profile_about)
-                .setMessage(getString(R.string.profile_about_details, version))
-                .setPositiveButton(R.string.ok, null)
-                .show()
-        }
+        profilePage.findViewById<View>(R.id.profileAbout).setOnClickListener { showAboutCard() }
         profilePage.findViewById<View>(R.id.profileSettings).setOnClickListener { showProfileSettings() }
     }
 
@@ -490,6 +483,40 @@ class MainActivity : AppCompatActivity() {
         val apply: (Int) -> Unit
     )
 
+    private fun showAboutCard() {
+        val version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        val dialog = Dialog(this)
+        val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
+        content.findViewById<TextView>(R.id.cardTitle).text = getString(R.string.profile_about)
+        content.findViewById<TextView>(R.id.cardMessage).apply {
+            text = getString(R.string.profile_about_details, version)
+            visibility = View.VISIBLE
+        }
+        addCardRow(content, getString(R.string.ok), Color.parseColor("#222222")) {
+            dialog.dismiss()
+        }
+        // 信息型卡片只保留一个确认按钮
+        content.findViewById<View>(R.id.cardCancel).visibility = View.GONE
+        val rows = content.findViewById<LinearLayout>(R.id.cardRows)
+        (rows.getChildAt(rows.childCount - 1) as? View)?.let { okRow ->
+            okRow.background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                setColor(0x12000000)
+            }
+            okRow.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)
+            ).apply {
+                marginStart = dp(16)
+                marginEnd = dp(16)
+                topMargin = dp(6)
+                bottomMargin = dp(16)
+            }
+            okRow.findViewById<TextView>(R.id.cardRowText)?.apply {
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            }
+        }
+        showCard(dialog, content)
+    }
     private fun showProfileSettings() {
         val dialog = ComponentDialog(this)
         val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
