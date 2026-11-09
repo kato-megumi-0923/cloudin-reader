@@ -64,6 +64,7 @@ class AgslGlassView @JvmOverloads constructor(
     private var shader: RuntimeShader? = null
     private var blurEffect: RenderEffect? = null
     private var effectAttached = false
+    private var recording = false
     private var supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
     private val preDraw = ViewTreeObserver.OnPreDrawListener {
@@ -123,22 +124,27 @@ class AgslGlassView @JvmOverloads constructor(
     }
 
     private fun record() {
+        // 录制目标里可能包含自己（比如底栏透镜在 root 里），避免递归
+        if (recording) return
         val target = backdropSource ?: (parent as? View) ?: return
         val w = width
         val h = height
         if (w <= 0 || h <= 0 || target.width <= 0 || target.height <= 0) return
         val n = node ?: return
-        runCatching {
-            val recording = n.beginRecording(w, h)
+        recording = true
+        try {
+            val canvas = n.beginRecording(w, h)
             // 对话框是独立 window，必须用屏幕坐标对齐，否则采到的是错位的区域（会露出黑块）
             getLocationOnScreen(location)
             target.getLocationOnScreen(sourceLocation)
-            recording.translate(
+            canvas.translate(
                 -(location[0] - sourceLocation[0]).toFloat(),
                 -(location[1] - sourceLocation[1]).toFloat()
             )
-            target.draw(recording)
+            target.draw(canvas)
             n.endRecording()
+        } finally {
+            recording = false
         }
     }
 

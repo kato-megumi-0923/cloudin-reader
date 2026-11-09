@@ -2,6 +2,7 @@ package com.cloudin.reader
 
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +12,8 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
+import android.widget.ImageView
+import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -65,6 +68,10 @@ class MainActivity : AppCompatActivity() {
     private val groups = mutableListOf<BookGroup>()
     private var importing = false
     private var layoutMode = ShelfLayout.GRID
+    private var lensView: LensView? = null
+    private var lensIcon: ImageView? = null
+    private var lensActive = false
+    private var lensIndex = -1
     private var shelfFormat = ShelfFormat.ALL
     private var currentTab = Tab.SHELF
     private var currentGroup: BookGroup? = null
@@ -128,6 +135,7 @@ class MainActivity : AppCompatActivity() {
         val savedFormat = prefs().getString("shelf_format", null)
         shelfFormat = ShelfFormat.entries.firstOrNull { it.key == savedFormat } ?: ShelfFormat.ALL
 
+        setupTabLens()
         setupRecycler()
         recycler.edgeEffectFactory = object : androidx.recyclerview.widget.RecyclerView.EdgeEffectFactory() {
             override fun createEdgeEffect(
@@ -273,6 +281,118 @@ class MainActivity : AppCompatActivity() {
         showHeaderMenu(btnFormat, items, selectedIndex = shelfFormat.ordinal)
     }
 
+    private val tabDrawables = listOf(
+        R.drawable.ic_tab_shelf, R.drawable.ic_tab_groups,
+        R.drawable.ic_tab_fav, R.drawable.ic_tab_profile
+    )
+
+    private fun setupTabLens() {
+        lensView = findViewById<LensView>(R.id.tabLens)
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_tab_shelf)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        }
+        lensIcon = icon
+        lensView?.addView(icon, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
+        (findViewById<View>(R.id.root) as? ViewGroup)?.clipChildren = false
+        // 底栏在系统手势区里，排除掉竖向手势，否则往上拖会被系统"回到桌面"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val bar = findViewById<View>(R.id.bottomBar)
+            bar.post {
+                bar.systemGestureExclusionRects = listOf(
+                    android.graphics.Rect(0, 0, bar.width, bar.height)
+                )
+            }
+        }
+        (findViewById<View>(R.id.root).parent as? ViewGroup)?.clipChildren = false
+    }
+
+    /** 底部 tab 手势：按住后镜像放大成一颗"透镜"，可拖出底栏，松手回弹并选中。 */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        val bar = findViewById<View>(R.id.bottomBar)
+        if (!adapter.selecting && bar.visibility == View.VISIBLE) {
+            val pos = IntArray(2)
+            val rootPos = IntArray(2)
+            bar.getLocationOnScreen(pos)
+            findViewById<View>(R.id.root).getLocationOnScreen(rootPos)
+            val inside = ev.rawX >= pos[0] - dp(20) && ev.rawX <= pos[0] + bar.width + dp(20) &&
+                ev.rawY >= pos[1] - dp(20) && ev.rawY <= pos[1] + bar.height + dp(20)
+            when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> if (inside) {
+                    lensIndex = (((ev.rawX - pos[0]) / bar.width) * 4).toInt().coerceIn(0, 3)
+                    lensActive = true
+                    showLens(ev.rawX, ev.rawY, rootPos)
+                    return true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> if (lensActive) {
+                    moveLens(ev.rawX, ev.rawY, rootPos)
+                    return true
+                }
+                android.view.MotionEvent.ACTION_UP -> if (lensActive) {
+                    finishLens(ev.rawX, ev.rawY, rootPos, bar, pos)
+                    return true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> if (lensActive) {
+                    hideLens()
+                    return true
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun showLens(rawX: Float, rawY: Float, rootPos: IntArray) {
+        val lens = lensView ?: return
+        lensIcon?.setImageResource(tabDrawables[lensIndex.coerceIn(0, 3)])
+        lens.visibility = View.VISIBLE
+        lens.bringToFront()
+        lens.elevation = dp(18).toFloat()
+        lens.alpha = 0f
+        lens.scaleX = 0.8f
+        lens.scaleY = 0.8f
+        moveLens(rawX, rawY, rootPos)
+        lens.animate().alpha(1f).scaleX(1.32f).scaleY(1.32f).setDuration(140).start()
+    }
+
+    private fun moveLens(rawX: Float, rawY: Float, rootPos: IntArray) {
+        val lens = lensView ?: return
+        lens.x = rawX - rootPos[0] - lens.width / 2f
+        lens.y = rawY - rootPos[1] - lens.height / 2f
+    }
+
+    private fun finishLens(rawX: Float, rawY: Float, rootPos: IntArray, bar: View, barPos: IntArray) {
+        val inside = rawX >= barPos[0] && rawX <= barPos[0] + bar.width &&
+            rawY >= barPos[1] && rawY <= barPos[1] + bar.height
+        val target = if (inside) (((rawX - barPos[0]) / bar.width) * 4).toInt().coerceIn(0, 3) else lensIndex
+        val lens = lensView ?: return
+        val targetIndex = target.coerceIn(0, 3)
+        val itemWidth = bar.width / 4f
+        val cx = barPos[0] + itemWidth * (targetIndex + 0.5f) - rootPos[0]
+        val cy = barPos[1] + bar.height / 2f - rootPos[1]
+        lens.animate()
+            .x(cx - lens.width / 2f)
+            .y(cy - lens.height / 2f)
+            .scaleX(1f).scaleY(1f).alpha(0f)
+            .setDuration(180)
+            .withEndAction {
+                lens.visibility = View.INVISIBLE
+                lensActive = false
+            }
+            .start()
+        if (inside || targetIndex != lensIndex) {
+            val tab = Tab.entries.getOrNull(targetIndex) ?: return
+            if (tab != currentTab || currentGroup != null) {
+                switchTab(tab)
+                updateTabBar()
+            }
+        }
+    }
+
+    private fun hideLens() {
+        val lens = lensView ?: return
+        lens.animate().alpha(0f).setDuration(120).withEndAction { lens.visibility = View.INVISIBLE }.start()
+        lensActive = false
+    }
     private fun setupRecycler() {
         val container = findViewById<FrameLayout>(R.id.container)
         recycler = RecyclerView(this).also { rv ->

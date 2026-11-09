@@ -161,6 +161,13 @@
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="16dp" />
 
+    <com.cloudin.reader.LensView
+        android:id="@+id/tabLens"
+        android:layout_width="62dp"
+        android:layout_height="58dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:visibility="invisible" />
     <LinearLayout
         android:id="@+id/actionSheet"
         android:layout_width="wrap_content"
