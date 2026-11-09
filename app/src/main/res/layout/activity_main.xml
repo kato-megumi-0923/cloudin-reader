@@ -154,20 +154,11 @@
     </com.example.liquidglass.LiquidGlassView>
 
 
-    <com.example.liquidglass.LiquidGlassTabBar
+    <com.cloudin.reader.ShelfTabBar
         android:id="@+id/bottomBar"
-        android:layout_width="240dp"
-        android:layout_height="64dp"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="16dp" />
-
-    <com.cloudin.reader.LensView
-        android:id="@+id/tabLens"
-        android:layout_width="86dp"
-        android:layout_height="86dp"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="16dp"
-        android:visibility="invisible" />
+        android:layout_width="304dp"
+        android:layout_height="104dp"
+        android:layout_gravity="bottom|center_horizontal" />
     <LinearLayout
         android:id="@+id/actionSheet"
         android:layout_width="wrap_content"

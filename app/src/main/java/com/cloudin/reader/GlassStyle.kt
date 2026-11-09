@@ -15,7 +15,13 @@ internal enum class GlassStyle(val label: Int) {
     }
 
     fun applyTo(view: View) {
-        if (view is LiquidGlassView) applyToGlass(view)
+        when (view) {
+            is ShelfTabBar -> {
+                view.glassStyle = this
+                return
+            }
+            is LiquidGlassView -> applyToGlass(view)
+        }
         if (view is ViewGroup) view.children.forEach { applyTo(it) }
     }
 

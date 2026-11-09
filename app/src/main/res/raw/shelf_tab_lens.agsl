@@ -1,0 +1,32 @@
+uniform shader tabs;
+uniform float2 center;
+uniform float2 halfSize;
+uniform float bevel;
+uniform float lift;
+
+half3 sampleTabs(float2 at, half3 backdrop) {
+    half4 glyph = tabs.eval(at);
+    return glyph.rgb + backdrop * (1.0 - glyph.a);
+}
+
+half4 main(float2 pixel) {
+    float radius = min(halfSize.x, halfSize.y);
+    float2 p = pixel - center;
+    float2 edge = abs(p) - (halfSize - float2(radius));
+    float distance = length(max(edge, 0.0)) + min(max(edge.x, edge.y), 0.0) - radius;
+    float coverage = 1.0 - smoothstep(-0.75, 0.75, distance);
+    if (coverage <= 0.0) return half4(0.0);
+
+    float2 normal = sign(p) * max(edge, 0.0);
+    normal /= max(length(normal), 0.001);
+    float rim = 1.0 - smoothstep(0.0, bevel, max(0.0, -distance));
+    float2 displacement = normal * rim * rim * bevel * lift;
+    float2 samplePoint = center + p / (1.0 + 0.10 * lift) + displacement;
+    half3 backdrop = mix(half3(0.918, 0.906, 0.894), half3(0.985, 0.982, 0.978), lift);
+    half3 color = sampleTabs(samplePoint, backdrop);
+    color.r = sampleTabs(samplePoint + displacement * 0.17, backdrop).r;
+    color.b = sampleTabs(samplePoint - displacement * 0.17, backdrop).b;
+    float outline = 1.0 - smoothstep(0.0, 1.7, max(0.0, -distance));
+    color += lift * (0.046 * rim * (1.0 - outline) - 0.15 * outline);
+    return half4(clamp(color, 0.0, 1.0) * coverage, coverage);
+}

@@ -12,7 +12,6 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
-import android.widget.ImageView
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.EditText
@@ -68,14 +67,6 @@ class MainActivity : AppCompatActivity() {
     private val groups = mutableListOf<BookGroup>()
     private var importing = false
     private var layoutMode = ShelfLayout.GRID
-    private var lensView: LensView? = null
-    private var lensIcon: ImageView? = null
-    private var lensActive = false
-    private var lensIndex = -1
-    private var lensDownX = 0f
-    private var lensDownY = 0f
-    private var lensShown = false
-    private val lensDelay = android.os.Handler(android.os.Looper.getMainLooper())
     private var shelfFormat = ShelfFormat.ALL
     private var currentTab = Tab.SHELF
     private var currentGroup: BookGroup? = null
@@ -116,7 +107,7 @@ class MainActivity : AppCompatActivity() {
             bottomInset = bars.bottom
             header.setPadding(header.paddingLeft, bars.top, header.paddingRight, header.paddingBottom)
             val barLp = bottomBarViewLocal.layoutParams as android.view.ViewGroup.MarginLayoutParams
-            barLp.bottomMargin = dp(16) + bars.bottom
+            barLp.bottomMargin = bars.bottom
             bottomBarViewLocal.layoutParams = barLp
             (findViewById<View>(R.id.actionSheet)?.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.let { sheetLp ->
                 sheetLp.bottomMargin = dp(16) + bars.bottom
@@ -139,7 +130,6 @@ class MainActivity : AppCompatActivity() {
         val savedFormat = prefs().getString("shelf_format", null)
         shelfFormat = ShelfFormat.entries.firstOrNull { it.key == savedFormat } ?: ShelfFormat.ALL
 
-        setupTabLens()
         setupRecycler()
         recycler.edgeEffectFactory = object : androidx.recyclerview.widget.RecyclerView.EdgeEffectFactory() {
             override fun createEdgeEffect(
@@ -172,21 +162,18 @@ class MainActivity : AppCompatActivity() {
                 textView.setPadding(dp(14), 0, dp(14), 0)
             }
         }
-        val barGlass = findViewById<com.example.liquidglass.LiquidGlassTabBar>(R.id.bottomBar)
-        barGlass.apply {
-            enableDynamicBackground = true
+        findViewById<ShelfTabBar>(R.id.bottomBar).apply {
+            setBackdropSource(root)
             setTabs(
                 listOf(
-                    com.example.liquidglass.LiquidGlassTabBar.TabItem("书架", getDrawable(R.drawable.ic_tab_shelf)),
-                    com.example.liquidglass.LiquidGlassTabBar.TabItem("分组", getDrawable(R.drawable.ic_tab_groups)),
-                    com.example.liquidglass.LiquidGlassTabBar.TabItem("喜爱", getDrawable(R.drawable.ic_tab_fav)),
-                    com.example.liquidglass.LiquidGlassTabBar.TabItem(getString(R.string.profile_tab), getDrawable(R.drawable.ic_tab_profile))
+                    ShelfTabBar.Tab(getString(R.string.shelf), R.drawable.ic_tab_shelf),
+                    ShelfTabBar.Tab("分组", R.drawable.ic_tab_groups),
+                    ShelfTabBar.Tab("喜爱", R.drawable.ic_tab_fav),
+                    ShelfTabBar.Tab(getString(R.string.profile_tab), R.drawable.ic_tab_profile)
                 )
             )
-            selectedIndex = 0
             onTabSelected = { index -> switchTab(Tab.entries[index]) }
         }
-        findViewById<View>(R.id.root).post { updateTabBar() }
         setupEmpty()
         setupProfile()
         GlassStyle.load(this).applyTo(root)
@@ -287,168 +274,6 @@ class MainActivity : AppCompatActivity() {
 
     private val tabNames = listOf("书架", "分组", "喜爱", "我的")
 
-    private val tabDrawables = listOf(
-        R.drawable.ic_tab_shelf, R.drawable.ic_tab_groups,
-        R.drawable.ic_tab_fav, R.drawable.ic_tab_profile
-    )
-
-    private fun setupTabLens() {
-        lensView = findViewById<LensView>(R.id.tabLens)
-        val icon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_tab_shelf)
-            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-        }
-        lensIcon = icon
-        lensView?.addView(icon, FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER))
-        (findViewById<View>(R.id.root) as? ViewGroup)?.clipChildren = false
-        // 底栏在系统手势区里，排除掉竖向手势，否则往上拖会被系统"回到桌面"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val bar = findViewById<View>(R.id.bottomBar)
-            bar.post {
-                bar.systemGestureExclusionRects = listOf(
-                    android.graphics.Rect(0, 0, bar.width, bar.height)
-                )
-            }
-        }
-        (findViewById<View>(R.id.root).parent as? ViewGroup)?.clipChildren = false
-    }
-
-    /** 底部 tab 手势：按住后镜像放大成一颗"透镜"，可拖出底栏，松手回弹并选中。 */
-    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
-        val bar = findViewById<View>(R.id.bottomBar)
-        if (!adapter.selecting && bar.visibility == View.VISIBLE) {
-            val pos = IntArray(2)
-            val rootPos = IntArray(2)
-            bar.getLocationOnScreen(pos)
-            findViewById<View>(R.id.root).getLocationOnScreen(rootPos)
-            val inside = ev.rawX >= pos[0] - dp(20) && ev.rawX <= pos[0] + bar.width + dp(20) &&
-                ev.rawY >= pos[1] - dp(20) && ev.rawY <= pos[1] + bar.height + dp(20)
-            when (ev.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> if (inside) {
-                    lensIndex = (((ev.rawX - pos[0]) / bar.width) * 4).toInt().coerceIn(0, 3)
-                    lensDownX = ev.rawX
-                    lensDownY = ev.rawY
-                    lensActive = true
-                    lensShown = false
-                    // 长按约 160ms 才浮起，轻点只切换不闪气泡
-                    val downX = ev.rawX
-                    val downY = ev.rawY
-                    lensDelay.postDelayed({
-                        if (lensActive && !lensShown) {
-                            lensShown = true
-                            showLens(downX, downY, rootPos)
-                        }
-                    }, 160L)
-                    return true
-                }
-                android.view.MotionEvent.ACTION_MOVE -> if (lensActive) {
-                    moveLens(ev.rawX, ev.rawY, rootPos)
-                    return true
-                }
-                android.view.MotionEvent.ACTION_UP -> if (lensActive) {
-                    lensDelay.removeCallbacksAndMessages(null)
-                    if (lensShown) {
-                        finishLens(ev.rawX, ev.rawY, rootPos, bar, pos)
-                    } else {
-                        // 轻点：直接选中
-                        lensActive = false
-                        val idx = (((ev.rawX - pos[0]) / bar.width) * 4).toInt().coerceIn(0, 3)
-                        val tab = Tab.entries.getOrNull(idx)
-                        if (tab != null && (tab != currentTab || currentGroup != null)) {
-                            switchTab(tab)
-                            updateTabBar()
-                        }
-                    }
-                    return true
-                }
-                android.view.MotionEvent.ACTION_CANCEL -> if (lensActive) {
-                    lensDelay.removeCallbacksAndMessages(null)
-                    if (lensShown) hideLens()
-                    lensActive = false
-                    return true
-                }
-            }
-        }
-        return super.dispatchTouchEvent(ev)
-    }
-
-    private fun showLens(rawX: Float, rawY: Float, rootPos: IntArray) {
-        val lens = lensView ?: return
-        val idx = lensIndex.coerceIn(0, 3)
-        lensIcon?.setImageResource(tabDrawables[idx])
-        lens.visibility = View.VISIBLE
-        lens.bringToFront()
-        lens.elevation = dp(18).toFloat()
-        lens.alpha = 0f
-        lens.scaleX = 0.85f
-        lens.scaleY = 0.85f
-        lens.x = rawX - rootPos[0] - lens.width / 2f
-        lens.y = rawY - rootPos[1] - lens.height / 2f
-        findViewById<View>(R.id.bottomBar)?.animate()?.scaleX(0.95f)?.scaleY(0.95f)?.setDuration(180)?.start()
-        // 按下先弹到 1.15 倍（比底栏图标明显大一圈）
-        lens.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(180)
-
-            .setInterpolator(android.view.animation.OvershootInterpolator(2.2f))
-            .start()
-    }
-
-    /** 跟手 + 弹性：拖得越远，透镜越大且沿拖动方向轻微拉伸。 */
-    private fun moveLens(rawX: Float, rawY: Float, rootPos: IntArray) {
-        val lens = lensView ?: return
-        lens.animate().cancel()
-        // cancel 会把入场 alpha 动画掐断在半途，这里显式拉满
-        lens.alpha = 1f
-        lens.x = rawX - rootPos[0] - lens.width / 2f
-        lens.y = rawY - rootPos[1] - lens.height / 2f
-        val dx = rawX - lensDownX
-        val dy = rawY - lensDownY
-        val dist = kotlin.math.hypot(dx, dy)
-        val k = (dist / dp(240).toFloat()).coerceIn(0f, 1f)
-        val base = 1f + 0.10f * k
-        lens.scaleX = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) base * (1f + 0.10f * k) else base * (1f - 0.04f * k)
-        lens.scaleY = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) base * (1f - 0.04f * k) else base * (1f + 0.10f * k)
-    }
-
-    private fun finishLens(rawX: Float, rawY: Float, rootPos: IntArray, bar: View, barPos: IntArray) {
-        val inside = rawX >= barPos[0] && rawX <= barPos[0] + bar.width &&
-            rawY >= barPos[1] && rawY <= barPos[1] + bar.height
-        val target = if (inside) (((rawX - barPos[0]) / bar.width) * 4).toInt().coerceIn(0, 3) else lensIndex
-        val lens = lensView ?: return
-        val targetIndex = target.coerceIn(0, 3)
-        val itemWidth = bar.width / 4f
-        val cx = barPos[0] + itemWidth * (targetIndex + 0.5f) - rootPos[0] - lens.width / 2f
-        val cy = barPos[1] + bar.height / 2f - rootPos[1] - lens.height / 2f
-        // 松手：回弹到目标图标位置（overshoot），同时缩回 1 倍并淡出
-        lens.animate()
-            .x(cx).y(cy)
-            .scaleX(0.62f).scaleY(0.62f)
-            .setDuration(260)
-            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f))
-            .withEndAction {
-                lensShown = false
-                findViewById<View>(R.id.bottomBar)?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(160)?.start()
-                lens.animate().alpha(0f).setDuration(90).withEndAction {
-                    lens.visibility = View.INVISIBLE
-                    lensActive = false
-                }.start()
-            }
-            .start()
-        if (inside || targetIndex != lensIndex) {
-            val tab = Tab.entries.getOrNull(targetIndex) ?: return
-            if (tab != currentTab || currentGroup != null) {
-                switchTab(tab)
-                updateTabBar()
-            }
-        }
-    }
-
-    private fun hideLens() {
-        val lens = lensView ?: return
-        lens.animate().alpha(0f).scaleX(0.9f).scaleY(0.9f).setDuration(110)
-            .withEndAction { lens.visibility = View.INVISIBLE }.start()
-        lensActive = false
-    }
     private fun setupRecycler() {
         val container = findViewById<FrameLayout>(R.id.container)
         recycler = RecyclerView(this).also { rv ->
@@ -523,19 +348,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateTabBar() {
-        val index = currentTab.ordinal
-        val bar = findViewById<com.example.liquidglass.LiquidGlassTabBar>(R.id.bottomBar)
-        if (bar.selectedIndex != index) bar.selectedIndex = index
+        findViewById<ShelfTabBar>(R.id.bottomBar).selectedIndex = currentTab.ordinal
     }
+
     private fun refreshBackdrop() {
-        val bar = findViewById<View>(R.id.bottomBar) as? GlassBar
-        if (bar == null) {
-            (findViewById<View>(R.id.bottomBar) as? com.example.liquidglass.LiquidGlassView)?.invalidate()
-        }
-        if (currentGroup != null || adapter.selecting) return
-        recycler.post {
-            bar?.captureFrom(recycler)
-        }
+        bottomBarView.invalidate()
     }
 
     private fun reload() {

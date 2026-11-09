@@ -13,6 +13,7 @@
     <color name="shelf_bg">#F0F1F2</color>
     <color name="shelf_title">#222222</color>
     <color name="shelf_meta">#9A9A9A</color>
+    <color name="shelf_tab_selected">#9C5015</color>
     <color name="card_bg">#FAFAFA</color>
     <color name="card_border">#E6E7E9</color>
 </resources>
