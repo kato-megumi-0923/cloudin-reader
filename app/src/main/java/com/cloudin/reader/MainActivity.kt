@@ -74,6 +74,8 @@ class MainActivity : AppCompatActivity() {
     private var lensIndex = -1
     private var lensDownX = 0f
     private var lensDownY = 0f
+    private var lensShown = false
+    private val lensDelay = android.os.Handler(android.os.Looper.getMainLooper())
     private var shelfFormat = ShelfFormat.ALL
     private var currentTab = Tab.SHELF
     private var currentGroup: BookGroup? = null
@@ -327,7 +329,16 @@ class MainActivity : AppCompatActivity() {
                     lensDownX = ev.rawX
                     lensDownY = ev.rawY
                     lensActive = true
-                    showLens(ev.rawX, ev.rawY, rootPos)
+                    lensShown = false
+                    // 长按约 160ms 才浮起，轻点只切换不闪气泡
+                    val downX = ev.rawX
+                    val downY = ev.rawY
+                    lensDelay.postDelayed({
+                        if (lensActive && !lensShown) {
+                            lensShown = true
+                            showLens(downX, downY, rootPos)
+                        }
+                    }, 160L)
                     return true
                 }
                 android.view.MotionEvent.ACTION_MOVE -> if (lensActive) {
@@ -335,11 +346,25 @@ class MainActivity : AppCompatActivity() {
                     return true
                 }
                 android.view.MotionEvent.ACTION_UP -> if (lensActive) {
-                    finishLens(ev.rawX, ev.rawY, rootPos, bar, pos)
+                    lensDelay.removeCallbacksAndMessages(null)
+                    if (lensShown) {
+                        finishLens(ev.rawX, ev.rawY, rootPos, bar, pos)
+                    } else {
+                        // 轻点：直接选中
+                        lensActive = false
+                        val idx = (((ev.rawX - pos[0]) / bar.width) * 4).toInt().coerceIn(0, 3)
+                        val tab = Tab.entries.getOrNull(idx)
+                        if (tab != null && (tab != currentTab || currentGroup != null)) {
+                            switchTab(tab)
+                            updateTabBar()
+                        }
+                    }
                     return true
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> if (lensActive) {
-                    hideLens()
+                    lensDelay.removeCallbacksAndMessages(null)
+                    if (lensShown) hideLens()
+                    lensActive = false
                     return true
                 }
             }
@@ -401,6 +426,7 @@ class MainActivity : AppCompatActivity() {
             .setDuration(260)
             .setInterpolator(android.view.animation.OvershootInterpolator(1.4f))
             .withEndAction {
+                lensShown = false
                 findViewById<View>(R.id.bottomBar)?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(160)?.start()
                 lens.animate().alpha(0f).setDuration(90).withEndAction {
                     lens.visibility = View.INVISIBLE
