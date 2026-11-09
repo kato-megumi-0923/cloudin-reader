@@ -77,11 +77,10 @@
 
                 <com.example.liquidglass.LiquidGlassButton
                     android:id="@+id/btnSearch"
-                    android:layout_width="wrap_content"
+                    android:layout_width="48dp"
                     android:layout_height="48dp"
                     android:layout_marginStart="6dp"
-                    android:text="搜索"
-                    android:textSize="13sp"
+                    android:contentDescription="搜索"
                     app:cornerRadius="999dp" />
 
                 <com.example.liquidglass.LiquidGlassButton

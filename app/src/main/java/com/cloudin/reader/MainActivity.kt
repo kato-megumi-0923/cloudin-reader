@@ -201,7 +201,13 @@ class MainActivity : AppCompatActivity() {
         applyLayoutMode()
 
         findViewById<View>(R.id.btnImport).setOnClickListener { showAddMenu(it) }
-        findViewById<View>(R.id.btnSearch).setOnClickListener { startActivity(SearchActivity.intent(this)) }
+        findViewById<LiquidGlassButton>(R.id.btnSearch).apply {
+            text = ""
+            textView.textSize = 0f
+            textView.setPadding(0, 0, 0, 0)
+            textView.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.ic_header_search, 0, 0)
+            setOnClickListener { startActivity(SearchActivity.intent(this@MainActivity)) }
+        }
         findViewById<View>(R.id.btnCancelSelect).setOnClickListener { exitSelecting() }
         findViewById<View>(R.id.btnSelectAll).setOnClickListener { toggleSelectAll() }
         findViewById<View>(R.id.actGroup).setOnClickListener { showGroupPicker() }
