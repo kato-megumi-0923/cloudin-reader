@@ -288,7 +288,11 @@ class ReadingStatsActivity : AppCompatActivity() {
     private fun metric(value: String) = label(value, 23f, ink).apply { typeface = Typeface.SERIF }
     private fun panel() = rounded(paper, 5).apply { setStroke(dp(1), stroke) }
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
-    private fun hourLabel(millis: Long) = String.format(java.util.Locale.getDefault(), "%.1f 小时", millis / 3_600_000.0)
+    private fun hourLabel(millis: Long): String = when {
+        millis <= 0L -> "0 分钟"
+        millis < 360_000L -> "${(millis / 60_000f).toInt().coerceAtLeast(1)} 分钟"
+        else -> String.format(java.util.Locale.getDefault(), "%.1f 小时", millis / 3_600_000.0)
+    }
     private fun durationLabel(millis: Long): String = if (millis == 0L) "0 分钟"
         else if (millis < 60_000L) "不足 1 分钟"
         else if (millis < 3_600_000L) "${millis / 60_000} 分钟"

@@ -66,6 +66,8 @@ internal object ReadingStats {
             val nextHour = ZonedDateTime.ofLocal(nextLocalHour, zone, local.offset).toInstant().toEpochMilli()
             val nextTransition = zone.rules.nextTransition(instant)?.instant?.toEpochMilli() ?: Long.MAX_VALUE
             val boundary = minOf(endMillis, nextHour, nextTransition)
+            // 防御：夏令时/异常时区下 boundary 可能等于 cursor，会让循环原地打转
+            if (boundary <= cursor) break
             val key = "$HOUR${local.toLocalDate()}:${local.hour}"
             increments[key] = (increments[key] ?: 0L) + boundary - cursor
             cursor = boundary

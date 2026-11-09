@@ -221,6 +221,7 @@ class MainActivity : AppCompatActivity() {
                     findViewById<View>(R.id.menuPanel).visibility == View.VISIBLE -> hideHeaderMenu()
                     adapter.selecting -> exitSelecting()
                     currentGroup != null -> closeFolder()
+                    currentTab == Tab.PROFILE -> switchTab(Tab.SHELF)
                     else -> {
                         isEnabled = false
                         onBackPressedDispatcher.onBackPressed()
