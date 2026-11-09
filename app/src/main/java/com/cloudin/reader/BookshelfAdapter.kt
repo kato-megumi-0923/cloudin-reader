@@ -125,6 +125,7 @@ class BookshelfAdapter(
         private val progress: TextView? = view.findViewById(R.id.progress)
         private val check: TextView? = view.findViewById(R.id.check)
         private val heart: ImageView? = view.findViewById(R.id.heart)
+        private val pinBadge: ImageView? = view.findViewById(R.id.pinBadge)
 
         fun bindFolder(group: BookGroup?, count: Int) {
             folderCard?.bind(group, count)
@@ -154,6 +155,7 @@ class BookshelfAdapter(
             )
             check?.setTextColor(if (isSelected) Color.WHITE else Color.TRANSPARENT)
 
+            pinBadge?.visibility = if (book.pinned) View.VISIBLE else View.GONE
             heart?.let { h ->
                 h.setImageResource(
                     if (book.favorite) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline

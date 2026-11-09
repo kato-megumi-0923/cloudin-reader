@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import android.annotation.SuppressLint
+
 import android.graphics.Paint
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -11,6 +13,7 @@ object PageBreaker {
     const val LINE_MULTIPLIER = 1.62f
     private const val CHUNK = 6000
 
+    @SuppressLint("WrongConstant")
     fun breakPages(text: String, paint: TextPaint, width: Int, height: Int, multiplier: Float = LINE_MULTIPLIER): List<IntRange> {
         val pages = ArrayList<IntRange>(text.length / 400 + 1)
         if (width <= 0 || height <= 0) return pages

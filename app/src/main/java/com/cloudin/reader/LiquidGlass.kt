@@ -2,6 +2,7 @@ package com.cloudin.reader
 
 import android.graphics.RuntimeShader
 import android.os.Build
+import androidx.annotation.RequiresApi
 
 /**
  * iOS 26「液态玻璃」的边缘折射。
@@ -39,6 +40,7 @@ object LiquidGlass {
         return runCatching { RuntimeShader(SHADER) }.getOrNull()
     }
 
+    @RequiresApi(33)
     fun configure(shader: RuntimeShader, width: Float, height: Float, edge: Float, refract: Float) {
         shader.setFloatUniform("uSize", width, height)
         shader.setFloatUniform("uEdge", edge)

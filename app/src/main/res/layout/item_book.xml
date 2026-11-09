@@ -20,9 +20,20 @@
             android:layout_height="20dp"
             android:layout_gravity="top|end"
             android:layout_margin="3dp"
+            android:layout_marginEnd="26dp"
             android:contentDescription="喜爱"
             android:padding="1dp"
             android:src="@drawable/ic_heart_outline" />
+
+        <ImageView
+            android:id="@+id/pinBadge"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="3dp"
+            android:contentDescription="已置顶"
+            android:src="@drawable/ic_pin_badge"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/check"

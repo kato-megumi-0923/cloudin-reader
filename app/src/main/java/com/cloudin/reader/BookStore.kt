@@ -2,6 +2,7 @@ package com.cloudin.reader
 
 import android.content.Context
 import android.net.Uri
+import android.util.AtomicFile
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -58,11 +59,13 @@ object BookStore {
 
     private fun libraryFile(context: Context) = File(context.filesDir, FILE_NAME)
 
+    @Synchronized
     fun load(context: Context): MutableList<Book> {
         val f = libraryFile(context)
-        if (!f.exists()) return mutableListOf()
+        val atomic = AtomicFile(f)
+        if (!f.exists() && !File(f.path + ".bak").exists()) return mutableListOf()
         return try {
-            val arr = JSONArray(f.readText())
+            val arr = JSONArray(atomic.openRead().bufferedReader().use { it.readText() })
             val list = mutableListOf<Book>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
@@ -91,7 +94,7 @@ object BookStore {
         }
     }
 
-    fun save(context: Context, books: List<Book>) {
+    private fun save(context: Context, books: List<Book>) {
         val arr = JSONArray()
         books.forEach { b ->
             arr.put(JSONObject().apply {
@@ -111,21 +114,33 @@ object BookStore {
                 put("groupId", b.groupId)
             })
         }
-        libraryFile(context).writeText(arr.toString())
+        val atomic = AtomicFile(libraryFile(context))
+        val stream = atomic.startWrite()
+        try {
+            stream.write(arr.toString().toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(stream)
+        } catch (e: Exception) {
+            atomic.failWrite(stream)
+            throw e
+        }
     }
 
+    @Synchronized
     fun setFavorite(context: Context, bookId: String, favorite: Boolean) {
         val list = load(context)
         list.firstOrNull { it.id == bookId }?.favorite = favorite
         save(context, list)
     }
 
-    fun setPinned(context: Context, bookId: String, pinned: Boolean) {
+    @Synchronized
+    fun setPinned(context: Context, bookIds: Collection<String>, pinned: Boolean) {
+        val ids = bookIds.toSet()
         val list = load(context)
-        list.firstOrNull { it.id == bookId }?.pinned = pinned
+        list.forEach { if (it.id in ids) it.pinned = pinned }
         save(context, list)
     }
 
+    @Synchronized
     fun setGroup(context: Context, bookIds: Collection<String>, groupId: String?) {
         val ids = bookIds.toSet()
         val list = load(context)
@@ -133,6 +148,14 @@ object BookStore {
         save(context, list)
     }
 
+    @Synchronized
+    fun clearGroup(context: Context, groupId: String) {
+        val list = load(context)
+        list.forEach { if (it.groupId == groupId) it.groupId = null }
+        save(context, list)
+    }
+
+    @Synchronized
     fun updateProgress(context: Context, bookId: String, progress: Float) {
         val list = load(context)
         val b = list.firstOrNull { it.id == bookId } ?: return
@@ -162,20 +185,8 @@ object BookStore {
             return ImportResult.Failed
         }
 
-        // 补算历史书目的哈希，再判断是否重复
-        val existing = load(context)
-        var hashFilled = false
-        existing.forEach { b ->
-            if (b.hash == null) {
-                b.hash = bookHash(context, b)
-                if (b.hash != null) hashFilled = true
-            }
-        }
-        if (existing.any { it.hash != null && it.hash == hash }) {
-            target.delete()
-            if (hashFilled) save(context, existing)
-            return ImportResult.Duplicate
-        }
+        // 文件读取和哈希计算不持锁；提交时重新读取书库，避免覆盖前台操作。
+        val hashes = missingHashes(context)
 
         val book: Book = if (ext == "txt") {
             Book(
@@ -213,18 +224,60 @@ object BookStore {
                 hash = hash
             )
         }
-        if (hashFilled) save(context, existing)
-        return ImportResult.Added(book)
+        return synchronized(this) {
+            val existing = load(context)
+            existing.forEach { if (it.hash == null) it.hash = hashes[it.id] }
+            if (existing.any { it.hash == hash }) {
+                deleteFiles(context, book)
+                save(context, existing)
+                ImportResult.Duplicate
+            } else {
+                existing.add(book)
+                try {
+                    save(context, existing)
+                } catch (e: Exception) {
+                    deleteFiles(context, book)
+                    throw e
+                }
+                ImportResult.Added(book)
+            }
+        }
     }
 
+    @Synchronized
     fun remove(context: Context, book: Book) {
         val list = load(context)
         list.removeAll { it.id == book.id }
         save(context, list)
+        deleteFiles(context, book)
+    }
+
+    private fun deleteFiles(context: Context, book: Book) {
         runCatching {
-            if (book.format == "epub") File(book.path).deleteRecursively()
-            else File(book.path).delete()
+            if (book.format == "epub") {
+                File(book.path).deleteRecursively()
+                File(booksDir(context), "${book.id}.epub").delete()
+            } else File(book.path).delete()
             book.coverPath?.let { File(it).delete() }
+        }
+    }
+
+    private fun missingHashes(context: Context): Map<String, String?> =
+        load(context).filter { it.hash == null }.associate { it.id to bookHash(context, it) }
+
+    fun cleanupDuplicates(context: Context): Int {
+        val hashes = missingHashes(context)
+        return synchronized(this) {
+            val list = load(context)
+            list.forEach { if (it.hash == null) it.hash = hashes[it.id] }
+            val removed = list.filter { it.hash != null }.groupBy { it.hash }.values.flatMap { group ->
+                val keep = group.maxByOrNull { it.lastRead }
+                group.filter { it.id != keep?.id }
+            }
+            val ids = removed.map { it.id }.toSet()
+            save(context, list.filter { it.id !in ids })
+            removed.forEach { deleteFiles(context, it) }
+            removed.size
         }
     }
 

@@ -13,7 +13,6 @@ import android.text.InputType
 import android.view.View
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -32,6 +31,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.liquidglass.LiquidGlassButton
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -46,10 +46,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var actionSheet: View
     private lateinit var selectionActions: View
     private lateinit var actions: View
-    private lateinit var btnMode: TextView
+    private lateinit var btnMode: LiquidGlassButton
     private lateinit var bottomBarView: View
-    private var tabBar: com.example.liquidglass.LiquidGlassTabBar? = null
-    private val tabLabels = mutableListOf<TextView>()
 
     private val books = mutableListOf<Book>()
     private val groups = mutableListOf<BookGroup>()
@@ -108,7 +106,6 @@ class MainActivity : AppCompatActivity() {
         selectionActions = findViewById(R.id.selectionActions)
         btnMode = findViewById(R.id.btnMode)
         bottomBarView = findViewById(R.id.bottomBar)
-        tabBar = null
 
         layoutMode = if (prefs().getString("shelf_layout", "grid") == "list")
             ShelfLayout.LIST else ShelfLayout.GRID
@@ -124,37 +121,26 @@ class MainActivity : AppCompatActivity() {
                 return e
             }
         }
-        listOf(
-            R.id.barMode, R.id.barSelect, R.id.barImport,
-            R.id.barSelectAll, R.id.barSelectCancel
-        ).mapNotNull { findViewById<View>(it) as? com.example.liquidglass.LiquidGlassView }
-            .forEach { glass ->
-                glass.backdropSource = findViewById(R.id.bgLayer)
-                glass.enableDynamicBackground = true
-                glass.blurAmount = 0.42f
-                glass.saturation = 160f
-                glass.material = com.example.liquidglass.GlassMaterial.REGULAR
-                glass.cornerRadius = 999f
-                glass.elevation = 0f
+        val headerBackdrop = findViewById<View>(R.id.bgLayer)
+        listOf(R.id.btnMode, R.id.btnSelect, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
+            .forEach { id ->
+                findViewById<LiquidGlassButton>(id).apply {
+                    backdropSource = headerBackdrop
+                    enableDynamicBackground = true
+                    val horizontalPadding = if (id == R.id.btnMode || id == R.id.btnImport) 0 else dp(14)
+                    textView.setPadding(horizontalPadding, 0, horizontalPadding, 0)
+                }
             }
-        listOf(
-            R.id.btnMode, R.id.btnSelect, R.id.btnImport,
-            R.id.btnSelectAll, R.id.btnCancelSelect
-        ).mapNotNull { findViewById<TextView>(it) }.forEach { it.setTextColor(Color.parseColor("#2E2E2E")) }
-        tabBar = null
-        val barGlass = findViewById<View>(R.id.bottomBar) as? com.example.liquidglass.LiquidGlassTabBar
-        barGlass?.backdropSource = findViewById<View>(R.id.root)
-        barGlass?.apply {
+        listOf(R.id.actPin, R.id.actGroup, R.id.actRemove).forEach { id ->
+            findViewById<LiquidGlassButton>(id).apply {
+                backdropSource = root
+                enableDynamicBackground = true
+                textView.setPadding(dp(14), 0, dp(14), 0)
+            }
+        }
+        val barGlass = findViewById<com.example.liquidglass.LiquidGlassTabBar>(R.id.bottomBar)
+        barGlass.apply {
             enableDynamicBackground = true
-            material = com.example.liquidglass.GlassMaterial.REGULAR
-            blurAmount = 0.12f
-            adaptiveLensScale = true
-            refractionHeight = dp(12).toFloat()
-            bevelWidth = dp(24).toFloat()
-            refractionFalloff = 2f
-            dispersionStrength = 0.12f
-            enableSensorHighlight = true
-            selectedTintColor = Color.WHITE
             setTabs(
                 listOf(
                     com.example.liquidglass.LiquidGlassTabBar.TabItem("书架", getDrawable(R.drawable.ic_tab_shelf)),
@@ -172,16 +158,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
             }
-        }
-        (findViewById<View>(R.id.actionSheet) as? com.example.liquidglass.LiquidGlassView)?.apply {
-            backdropSource = findViewById<View>(R.id.root)
-            enableDynamicBackground = true
-            blurAmount = 0.12f
-            adaptiveLensScale = true
-            refractionHeight = dp(12).toFloat()
-            bevelWidth = dp(24).toFloat()
-            dispersionStrength = 0.12f
-            glassAppearanceListener = { _ -> applyGlassForeground() }
         }
         findViewById<View>(R.id.root).post { updateTabBar() }
         setupEmpty()
@@ -205,7 +181,6 @@ class MainActivity : AppCompatActivity() {
         adapter.onSelectionChanged = { count -> updateSelectionUi(count) }
         recycler.adapter = adapter
         applyLayoutMode()
-        applyGlassForeground()
 
         findViewById<View>(R.id.btnImport).setOnClickListener { showAddMenu() }
         findViewById<View>(R.id.btnSelect).setOnClickListener { startSelecting(null) }
@@ -217,22 +192,6 @@ class MainActivity : AppCompatActivity() {
         btnMode.setOnClickListener { toggleLayout() }
         btnBack.setOnClickListener { closeFolder() }
 
-        (findViewById<View>(R.id.bottomBar) as? com.example.liquidglass.LiquidGlassView)?.apply {
-            enableDynamicBackground = true
-            post {
-                enableShadow = false
-                clipToOutline = true
-                outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = dp(28).toFloat()
-                    setColor(android.graphics.Color.TRANSPARENT)
-                }
-                invalidate()
-            }
-            blurAmount = 0.1f
-            saturation = 160f
-            dispersionStrength = 0.12f
-        }
         recycler.post {
             recycler.setPadding(dp(4), dp(6), dp(4), 0)
             refreshBackdrop()
@@ -294,7 +253,6 @@ class MainActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         applyLayoutMode()
-        applyGlassForeground()
         recycler.post { refreshBackdrop() }
     }
 
@@ -315,41 +273,23 @@ class MainActivity : AppCompatActivity() {
             "shelf_layout", if (layoutMode == ShelfLayout.LIST) "list" else "grid"
         ).apply()
         applyLayoutMode()
-        applyGlassForeground()
     }
 
     private fun switchTab(tab: Tab) {
         if (currentTab == tab && currentGroup == null) return
         currentTab = tab
         currentGroup = null
-        if (adapter.selecting) exitSelecting()
-        reload()
+        if (adapter.selecting) exitSelecting() else reload()
     }
 
-    private fun applyGlassForeground() {
-        val bar = findViewById<View>(R.id.bottomBar) as? com.example.liquidglass.LiquidGlassView
-        val sheet = findViewById<View>(R.id.actionSheet) as? com.example.liquidglass.LiquidGlassView
-        val activeGlass = if (actionSheet.visibility == View.VISIBLE) sheet else bar
-        val overLight = activeGlass?.isOverLightBackground ?: false
-        val ink = if (overLight) Color.parseColor("#2E2E2E") else Color.WHITE
-        val remove = if (overLight) Color.parseColor("#C0442E") else Color.parseColor("#FF8A73")
-        listOf(R.id.actPinLabel, R.id.actGroupLabel)
-            .mapNotNull { findViewById<TextView>(it) }.forEach { it.setTextColor(ink) }
-        findViewById<TextView>(R.id.actRemoveLabel)?.setTextColor(remove)
-        listOf(R.id.actPin, R.id.actGroup).forEach { id ->
-            (findViewById<android.view.ViewGroup>(id)?.getChildAt(0) as? ImageView)?.imageTintList =
-                android.content.res.ColorStateList.valueOf(ink)
-        }
-        findViewById<ImageView>(R.id.actRemoveIcon)?.imageTintList =
-            android.content.res.ColorStateList.valueOf(remove)
-    }
     private fun updateTabBar() {
         val index = when (currentTab) {
             Tab.SHELF -> 0
             Tab.GROUPS -> 1
             else -> 2
         }
-        (findViewById<View>(R.id.bottomBar) as? com.example.liquidglass.LiquidGlassTabBar)?.selectedIndex = index
+        val bar = findViewById<com.example.liquidglass.LiquidGlassTabBar>(R.id.bottomBar)
+        if (bar.selectedIndex != index) bar.selectedIndex = index
     }
     private fun refreshBackdrop() {
         val bar = findViewById<View>(R.id.bottomBar) as? GlassBar
@@ -669,8 +609,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun startSelecting(book: Book?) {
         if (book == null) adapter.startSelecting() else adapter.enterSelection(book)
+        bottomBarView.animate().cancel()
         bottomBarView.visibility = View.GONE
-        actionSheet.visibility = View.VISIBLE
+        showBottomBar(actionSheet)
+        actionSheet.post { updatePinAction() }
         selectionActions.visibility = View.VISIBLE
         actions.visibility = View.GONE
         btnBack.visibility = View.GONE
@@ -680,26 +622,57 @@ class MainActivity : AppCompatActivity() {
 
     private fun exitSelecting() {
         adapter.exitSelection()
+        actionSheet.animate().cancel()
         actionSheet.visibility = View.GONE
-        bottomBarView.visibility = View.VISIBLE
         selectionActions.visibility = View.GONE
         actions.visibility = View.VISIBLE
         reload()
+        if (bottomBarView.visibility == View.VISIBLE) showBottomBar(bottomBarView)
+    }
+
+    private fun showBottomBar(bar: View) {
+        bar.animate().cancel()
+        bar.alpha = 0f
+        bar.translationY = dp(24).toFloat()
+        bar.scaleX = 0.94f
+        bar.scaleY = 0.94f
+        bar.visibility = View.VISIBLE
+        bar.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
+            .setDuration(270)
+            .setInterpolator(android.view.animation.DecelerateInterpolator(1.4f))
+            .setUpdateListener { bar.invalidate() }
+            .start()
     }
 
     private fun updateSelectionUi(count: Int) {
         title.text = if (adapter.selecting) "已选 $count 本" else getString(R.string.shelf)
-        findViewById<TextView>(R.id.btnSelectAll).text =
+        findViewById<LiquidGlassButton>(R.id.btnSelectAll).text =
             if (adapter.allSelected()) "取消全选" else "全选"
+        updatePinAction()
+    }
+
+    /** 选中项里已经全部置顶时，按钮变成「取消置顶」 */
+    private fun selectedAllPinned(): Boolean {
+        val ids = adapter.selectedIds()
+        if (ids.isEmpty()) return false
+        return ids.all { id -> books.firstOrNull { it.id == id }?.pinned == true }
+    }
+
+    private fun updatePinAction() {
+        val unpin = selectedAllPinned()
+        findViewById<LiquidGlassButton>(R.id.actPin)?.text = if (unpin) "取消置顶" else "置顶"
     }
 
     private fun pinSelected() {
         val ids = adapter.selectedIds()
         if (ids.isEmpty()) return
-        val list = BookStore.load(this)
-        list.filter { it.id in ids }.forEach { it.pinned = true }
-        BookStore.save(this, list)
-        Toast.makeText(this, "已置顶 ${ids.size} 本", Toast.LENGTH_SHORT).show()
+        val unpin = selectedAllPinned()
+        BookStore.setPinned(this, ids, !unpin)
+        Toast.makeText(
+            this,
+            if (unpin) "已取消置顶 ${ids.size} 本" else "已置顶 ${ids.size} 本",
+            Toast.LENGTH_SHORT
+        ).show()
         exitSelecting()
     }
 
@@ -725,11 +698,11 @@ class MainActivity : AppCompatActivity() {
     private fun showAddMenu() {
         val scrim = findViewById<View>(R.id.menuScrim)
         val panel = findViewById<View>(R.id.menuPanel)
-        (panel as? com.example.liquidglass.LiquidGlassView)?.backdropSource = findViewById<View>(R.id.bgLayer)
+        val backdrop = findViewById<View>(R.id.bgLayer)
         (panel as? com.example.liquidglass.LiquidGlassView)?.apply {
+            backdropSource = backdrop
             enableDynamicBackground = true
             cornerRadius = dp(24).toFloat()
-            blurAmount = 0.14f
         }
         val rows = findViewById<LinearLayout>(R.id.menuRows)
         if (panel.visibility == View.VISIBLE) {
@@ -739,7 +712,7 @@ class MainActivity : AppCompatActivity() {
         rows.removeAllViews()
         val items = listOf(
             "导入文件" to { filePicker.launch(arrayOf("text/plain", "application/epub+zip", "application/octet-stream")) },
-            "按目录导入" to { if (ensureAllFilesAccess()) folderPicker.launch(null) },
+            "按目录导入" to { folderPicker.launch(null) },
             "新建分组" to { addGroupDialog() },
             "清理重复书籍" to { cleanupDuplicates() }
         )
@@ -773,10 +746,11 @@ class MainActivity : AppCompatActivity() {
         scrim.animate().alpha(1f).setDuration(120).start()
         panel.visibility = View.VISIBLE
         panel.alpha = 0f
-        panel.scaleX = 0.88f
-        panel.scaleY = 0.88f
-        panel.translationY = -dp(10).toFloat()
+        panel.scaleX = 0.80f
+        panel.scaleY = 0.80f
+        panel.translationY = -dp(20).toFloat()
         panel.post {
+            if (panel.visibility != View.VISIBLE) return@post
             panel.pivotX = panel.width.toFloat()
             panel.pivotY = 0f
             panel.animate()
@@ -784,8 +758,9 @@ class MainActivity : AppCompatActivity() {
                 .scaleX(1f)
                 .scaleY(1f)
                 .translationY(0f)
-                .setDuration(200)
+                .setDuration(300)
                 .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f))
+                .setUpdateListener { panel.invalidate() }
                 .start()
         }
         scrim.setOnClickListener { hideAddMenu() }
@@ -798,15 +773,18 @@ class MainActivity : AppCompatActivity() {
         scrim.animate().alpha(0f).setDuration(110).start()
         panel.animate()
             .alpha(0f)
-            .scaleX(0.92f)
-            .scaleY(0.92f)
-            .setDuration(130)
+            .scaleX(0.88f)
+            .scaleY(0.88f)
+            .translationY(-dp(12).toFloat())
+            .setDuration(180)
+            .setUpdateListener { panel.invalidate() }
             .withEndAction {
                 panel.visibility = View.GONE
                 scrim.visibility = View.GONE
                 panel.alpha = 1f
                 panel.scaleX = 1f
                 panel.scaleY = 1f
+                panel.translationY = 0f
             }
             .start()
     }
@@ -833,9 +811,6 @@ class MainActivity : AppCompatActivity() {
                     else -> failed++
                 }
             }
-            val list = BookStore.load(this)
-            list.addAll(added)
-            BookStore.save(this, list)
             runOnUiThread {
                 importing = false
                 reload()
@@ -882,9 +857,6 @@ class MainActivity : AppCompatActivity() {
                     else -> failed++
                 }
             }
-            val list = BookStore.load(this)
-            list.addAll(added)
-            BookStore.save(this, list)
             runOnUiThread {
                 importing = false
                 reload()
@@ -905,29 +877,16 @@ class MainActivity : AppCompatActivity() {
         importing = true
         Toast.makeText(this, "正在检查重复书籍…", Toast.LENGTH_SHORT).show()
         Thread {
-            val list = BookStore.load(this)
-            val byHash = mutableMapOf<String, MutableList<Book>>()
-            list.forEach { b ->
-                if (b.hash == null) b.hash = BookStore.bookHash(this, b)
-                val h = b.hash ?: return@forEach
-                byHash.getOrPut(h) { mutableListOf() }.add(b)
-            }
-            val toRemove = mutableListOf<Book>()
-            byHash.values.forEach { group ->
-                if (group.size > 1) {
-                    val keep = group.maxByOrNull { it.lastRead } ?: group.first()
-                    group.filter { it.id != keep.id }.forEach { toRemove.add(it) }
-                }
-            }
-            val keep = list.filter { b -> toRemove.none { it.id == b.id } }
-            BookStore.save(this, keep)
-            toRemove.forEach { BookStore.remove(this, it) }
+            val result = runCatching { BookStore.cleanupDuplicates(this) }
             runOnUiThread {
                 importing = false
                 reload()
                 Toast.makeText(
                     this,
-                    if (toRemove.isEmpty()) "没有发现重复书籍" else "清理了 ${toRemove.size} 本重复书籍",
+                    result.fold(
+                        onSuccess = { if (it == 0) "没有发现重复书籍" else "清理了 $it 本重复书籍" },
+                        onFailure = { "清理失败，请重试" }
+                    ),
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -943,7 +902,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun collectDocuments(treeUri: Uri, out: MutableList<Pair<Uri, String>>, depth: Int) {
         if (depth > 8) return
-        val docId = DocumentsContract.getDocumentId(treeUri)
+        val docId = if (depth == 0) DocumentsContract.getTreeDocumentId(treeUri)
+            else DocumentsContract.getDocumentId(treeUri)
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
         contentResolver.query(
             childrenUri,

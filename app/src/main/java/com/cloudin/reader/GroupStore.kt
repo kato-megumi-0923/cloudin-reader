@@ -73,8 +73,6 @@ object GroupStore {
         val list = load(context)
         list.removeAll { it.id == id }
         save(context, list)
-        val books = BookStore.load(context)
-        books.forEach { if (it.groupId == id) it.groupId = null }
-        BookStore.save(context, books)
+        BookStore.clearGroup(context, id)
     }
 }

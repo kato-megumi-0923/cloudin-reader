@@ -58,55 +58,32 @@
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <com.example.liquidglass.LiquidGlassView
-                    android:id="@+id/barMode"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="4dp">
+                <com.example.liquidglass.LiquidGlassButton
+                    android:id="@+id/btnMode"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="4dp"
+                    android:text="&#9776;"
+                    android:textSize="16sp"
+                    app:cornerRadius="999dp" />
 
-                    <TextView
-                        android:id="@+id/btnMode"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:gravity="center"
-                        android:text="&#9776;"
-                        android:textColor="@color/shelf_title"
-                        android:textSize="16sp" />
-                </com.example.liquidglass.LiquidGlassView>
-
-                <com.example.liquidglass.LiquidGlassView
-                    android:id="@+id/barSelect"
+                <com.example.liquidglass.LiquidGlassButton
+                    android:id="@+id/btnSelect"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="6dp">
+                    android:layout_height="48dp"
+                    android:layout_marginStart="6dp"
+                    android:text="选择"
+                    android:textSize="13sp"
+                    app:cornerRadius="999dp" />
 
-                    <TextView
-                        android:id="@+id/btnSelect"
-                        android:layout_width="wrap_content"
-                        android:layout_height="match_parent"
-                        android:gravity="center"
-                        android:paddingStart="14dp"
-                        android:paddingEnd="14dp"
-                        android:text="选择"
-                        android:textColor="@color/shelf_title"
-                        android:textSize="13sp" />
-                </com.example.liquidglass.LiquidGlassView>
-
-                <com.example.liquidglass.LiquidGlassView
-                    android:id="@+id/barImport"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="6dp">
-
-                    <TextView
-                        android:id="@+id/btnImport"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:gravity="center"
-                        android:text="&#65291;"
-                        android:textColor="@color/shelf_title"
-                        android:textSize="20sp" />
-                </com.example.liquidglass.LiquidGlassView>
+                <com.example.liquidglass.LiquidGlassButton
+                    android:id="@+id/btnImport"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="6dp"
+                    android:text="&#65291;"
+                    android:textSize="20sp"
+                    app:cornerRadius="999dp" />
             </LinearLayout>
 
             <LinearLayout
@@ -117,40 +94,22 @@
                 android:orientation="horizontal"
                 android:visibility="gone">
 
-                <com.example.liquidglass.LiquidGlassView
-                    android:id="@+id/barSelectAll"
+                <com.example.liquidglass.LiquidGlassButton
+                    android:id="@+id/btnSelectAll"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp">
+                    android:layout_height="48dp"
+                    android:text="全选"
+                    android:textSize="13sp"
+                    app:cornerRadius="999dp" />
 
-                    <TextView
-                        android:id="@+id/btnSelectAll"
-                        android:layout_width="wrap_content"
-                        android:layout_height="match_parent"
-                        android:gravity="center"
-                        android:paddingStart="14dp"
-                        android:paddingEnd="14dp"
-                        android:text="全选"
-                        android:textColor="@color/shelf_title"
-                        android:textSize="13sp" />
-                </com.example.liquidglass.LiquidGlassView>
-
-                <com.example.liquidglass.LiquidGlassView
-                    android:id="@+id/barSelectCancel"
+                <com.example.liquidglass.LiquidGlassButton
+                    android:id="@+id/btnCancelSelect"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="6dp">
-
-                    <TextView
-                        android:id="@+id/btnCancelSelect"
-                        android:layout_width="wrap_content"
-                        android:layout_height="match_parent"
-                        android:gravity="center"
-                        android:paddingStart="14dp"
-                        android:paddingEnd="14dp"
-                        android:text="取消"
-                        android:textColor="@color/shelf_title"
-                        android:textSize="13sp" />
-                </com.example.liquidglass.LiquidGlassView>
+                    android:layout_height="48dp"
+                    android:layout_marginStart="6dp"
+                    android:text="取消"
+                    android:textSize="13sp"
+                    app:cornerRadius="999dp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -194,100 +153,39 @@
         android:layout_width="240dp"
         android:layout_height="64dp"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="16dp"
-        app:cornerRadius="32dp"
-        app:blurAmount="0.12"
-        app:glassMaterial="regular" />
+        android:layout_marginBottom="16dp" />
 
-    <com.example.liquidglass.LiquidGlassView
+    <LinearLayout
         android:id="@+id/actionSheet"
         android:layout_width="wrap_content"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="16dp"
-        app:cornerRadius="28dp"
-        app:blurAmount="0.12"
-        app:glassMaterial="regular"
+        android:orientation="horizontal"
         android:visibility="gone">
 
-        <LinearLayout
+        <com.example.liquidglass.LiquidGlassButton
+            android:id="@+id/actPin"
             android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp">
+            android:layout_height="48dp"
+            android:text="置顶"
+            android:textSize="13sp" />
 
-            <LinearLayout
-                android:id="@+id/actPin"
-                android:layout_width="88dp"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
+        <com.example.liquidglass.LiquidGlassButton
+            android:id="@+id/actGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="6dp"
+            android:text="分组到…"
+            android:textSize="13sp" />
 
-                <ImageView
-                    android:layout_width="19dp"
-                    android:layout_height="19dp"
-                    android:src="@drawable/ic_action_pin"
-                    android:tint="#FFFFFF" />
-
-                <TextView
-                    android:id="@+id/actPinLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="置顶"
-                    android:textColor="#FFFFFF"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/actGroup"
-                android:layout_width="88dp"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="19dp"
-                    android:layout_height="19dp"
-                    android:src="@drawable/ic_action_folder"
-                    android:tint="#FFFFFF" />
-
-                <TextView
-                    android:id="@+id/actGroupLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="分组到…"
-                    android:textColor="#FFFFFF"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/actRemove"
-                android:layout_width="88dp"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:id="@+id/actRemoveIcon"
-                    android:layout_width="19dp"
-                    android:layout_height="19dp"
-                    android:src="@drawable/ic_action_remove"
-                    android:tint="#FF8A73" />
-
-                <TextView
-                    android:id="@+id/actRemoveLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="移出书架"
-                    android:textColor="#FF8A73"
-                    android:textSize="10sp" />
-            </LinearLayout>
-        </LinearLayout>
-    </com.example.liquidglass.LiquidGlassView>
+        <com.example.liquidglass.LiquidGlassButton
+            android:id="@+id/actRemove"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="6dp"
+            android:text="移出书架"
+            android:textSize="13sp" />
+    </LinearLayout>
 
 </FrameLayout>

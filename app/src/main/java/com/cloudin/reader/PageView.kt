@@ -1,18 +1,19 @@
 package com.cloudin.reader
 
+import android.annotation.SuppressLint
+
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Camera
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.LinearGradient
-import android.graphics.Matrix
+import android.graphics.Shader
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
@@ -21,6 +22,7 @@ import android.util.AttributeSet
 import android.util.LruCache
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
 import kotlin.math.abs
 import kotlin.math.min
@@ -42,10 +44,12 @@ class PageView @JvmOverloads constructor(
     private var document: Document? = null
 
     private val dp = resources.displayMetrics.density
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var padH = 20f * dp
     private val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     private val padTop = (if (landscape) 18f else 48f) * dp
-    private val padBottom = 0f
+    private var bottomInset = 0
+    private val padBottom get() = 36f * dp + bottomInset
 
     private val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.create("serif", Typeface.NORMAL)
@@ -58,11 +62,9 @@ class PageView @JvmOverloads constructor(
     private val footPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 10.5f * resources.displayMetrics.scaledDensity
     }
+    private val curl = PageCurl()
     private val foldPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bgPaint = Paint().apply { color = ReaderPrefs.background(ReaderPrefs.THEME_PAPER) }
-    private val camera = Camera()
-    private val matrix = Matrix()
-    private val shadePaint = Paint()
 
     private var pages: List<IntRange> = emptyList()
     private var pageIndex = 0
@@ -72,6 +74,7 @@ class PageView @JvmOverloads constructor(
 
     private var theme = ReaderPrefs.THEME_PAPER
     private var turnMode = ReaderPrefs.MODE_CURL
+    internal val usesCurl get() = turnMode == ReaderPrefs.MODE_CURL
 
     private var bgColor = ReaderPrefs.background(theme)
     private var inkColor = ReaderPrefs.ink(theme)
@@ -80,12 +83,17 @@ class PageView @JvmOverloads constructor(
     private var animating = false
     private var animProgress = 0f
     private var animTarget = 0
+    // In the middle third, grasp the side of the sheet instead of a corner.
+    private var curlCornerY: Float? = null
+    private var curlTipX = 0f
+    private var curlTipY = 0f
     private var animator: ValueAnimator? = null
 
     private var touchDownX = 0f
     private var touchDownY = 0f
     private var touchDownTime = 0L
     private var dragActive = false
+    private var swipeHandled = false
 
     init {
         isClickable = true
@@ -104,6 +112,12 @@ class PageView @JvmOverloads constructor(
 
     fun setTurnMode(mode: Int) {
         turnMode = mode
+    }
+
+    fun setBottomInset(inset: Int) {
+        if (bottomInset == inset) return
+        bottomInset = inset
+        repaginate()
     }
 
     /** 页边距，0–100，映射到 12–44dp。 */
@@ -167,13 +181,13 @@ class PageView @JvmOverloads constructor(
         }
     }
 
-    fun nextPage() = turn(1)
-    fun prevPage() = turn(-1)
+    fun nextPage(y: Float = height / 2f) = turn(1, y)
+    fun prevPage(y: Float = height / 2f) = turn(-1, y)
     fun pageCount(): Int = pages.size
     fun pageIndex(): Int = pageIndex
 
-    private fun turn(delta: Int) {
-        val d = document ?: return
+    private fun turn(delta: Int, y: Float = touchDownY) {
+        if (document == null) return
         if (pages.isEmpty() || animating) return
         val target = pageIndex + delta
         if (target !in pages.indices) return
@@ -186,6 +200,11 @@ class PageView @JvmOverloads constructor(
         animTarget = target
         animating = true
         animProgress = 0f
+        if (turnMode == ReaderPrefs.MODE_CURL) {
+            beginCurl(y)
+            settleCurl(commit = true, duration = 340L)
+            return
+        }
         animator?.cancel()
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = when (turnMode) {
@@ -220,9 +239,15 @@ class PageView @JvmOverloads constructor(
     private fun notifyChanged() {
         val d = document ?: return
         val p = pages.getOrNull(pageIndex) ?: return
-        val progress = if (d.text.isEmpty()) 0f else p.first.toFloat() / d.text.length
+        val progress = progressAt(pageIndex)
         onPageChanged?.invoke(pageIndex, pages.size, progress)
         onChapterChanged?.invoke(d.chapterAt(p.first))
+    }
+
+    private fun progressAt(index: Int): Float {
+        val d = document ?: return 0f
+        val page = pages.getOrNull(index) ?: return 0f
+        return if (index == pages.lastIndex) 1f else page.first.toFloat() / d.text.length
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -249,44 +274,61 @@ class PageView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 touchDownX = event.x
                 touchDownY = event.y
-                touchDownTime = System.currentTimeMillis()
+                touchDownTime = event.eventTime
                 dragActive = false
+                swipeHandled = false
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (swipeHandled) return true
                 if (!dragActive && pages.isNotEmpty() && !animating) {
                     val dx = event.x - touchDownX
                     val dy = event.y - touchDownY
-                    if (abs(dx) > 16f * dp && abs(dy) < 90f * dp) {
+                    if (turnMode == ReaderPrefs.MODE_NONE) {
+                        if (abs(dx) > 56f * dp && abs(dx) > abs(dy) * 1.4f) {
+                            turn(if (dx < 0) 1 else -1)
+                            swipeHandled = true
+                        }
+                        return true
+                    }
+                    val horizontal = if (turnMode == ReaderPrefs.MODE_CURL) {
+                        abs(dx) > touchSlop && abs(dx) > abs(dy) * 0.65f
+                    } else {
+                        abs(dx) > 16f * dp && abs(dy) < 90f * dp
+                    }
+                    if (horizontal) {
                         val dir = if (dx < 0) 1 else -1
                         val target = pageIndex + dir
                         if (target in pages.indices) {
                             dragActive = true
                             animTarget = target
+                            if (turnMode == ReaderPrefs.MODE_CURL) beginCurl(touchDownY)
                             animating = true
                             animProgress = 0f
                         }
                     }
                 }
                 if (dragActive) {
-                    animProgress = (abs(event.x - touchDownX) / width.toFloat()).coerceIn(0f, 1f)
+                    updateDrag(event.x, event.y)
                     invalidate()
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                if (swipeHandled) return true
                 if (dragActive) {
                     dragActive = false
-                    val dt2 = System.currentTimeMillis() - touchDownTime
-                    val dist = abs(event.x - touchDownX)
+                    val dt2 = event.eventTime - touchDownTime
+                    updateDrag(event.x, event.y)
+                    val travel = dragTravel(event.x)
                     // 快速滑动（甩动）即使距离不够也完成翻页
-                    val flung = dist > 56f * dp && dt2 < 280
-                    settleDrag(animProgress > 0.32f || flung)
+                    val flung = travel > 56f * dp && dt2 < 280
+                    settleDrag(travel > width * 0.32f || flung)
                     return true
                 }
                 val dx = event.x - touchDownX
                 val dy = event.y - touchDownY
-                val dt = System.currentTimeMillis() - touchDownTime
+                val dt = event.eventTime - touchDownTime
                 if (abs(dx) < 12f * dp && abs(dy) < 12f * dp && dt < 450) {
                     val w = width.toFloat()
                     when {
@@ -308,7 +350,66 @@ class PageView @JvmOverloads constructor(
         return true
     }
 
+    private fun beginCurl(y: Float) {
+        curlCornerY = when {
+            y < height / 3f -> 0f
+            y > height * 2f / 3f -> height.toFloat()
+            else -> null
+        }
+        curlTipX = curlEdgeX()
+        curlTipY = curlCornerY ?: y.coerceIn(0f, height.toFloat())
+    }
+
+    private fun curlEdgeX(): Float = if (animTarget > pageIndex) width.toFloat() else 0f
+
+    private fun dragTravel(x: Float): Float {
+        val dx = x - touchDownX
+        return if (turnMode != ReaderPrefs.MODE_CURL) abs(dx)
+        else if (animTarget > pageIndex) -dx else dx
+    }
+
+    private fun updateDrag(x: Float, y: Float) {
+        if (turnMode == ReaderPrefs.MODE_CURL) {
+            curlTipX = x.coerceIn(0f, width.toFloat())
+            curlTipY = y.coerceIn(0f, height.toFloat())
+        } else {
+            animProgress = (dragTravel(x) / width.coerceAtLeast(1)).coerceIn(0f, 1f)
+        }
+    }
+
+    private fun settleCurl(commit: Boolean, duration: Long) {
+        animator?.cancel()
+        val edgeX = curlEdgeX()
+        val destinationX = if (commit) (if (animTarget > pageIndex) -width.toFloat() else 2f * width) else edgeX
+        val fromX = curlTipX
+        val fromY = curlTipY
+        val destinationY = curlCornerY ?: fromY
+        animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            this.duration = duration
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                val fraction = it.animatedValue as Float
+                curlTipX = fromX + (destinationX - fromX) * fraction
+                curlTipY = fromY + (destinationY - fromY) * fraction
+                invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (commit) applyPage(animTarget) else {
+                        animating = false
+                        invalidate()
+                    }
+                }
+            })
+            start()
+        }
+    }
+
     private fun settleDrag(commit: Boolean) {
+        if (turnMode == ReaderPrefs.MODE_CURL) {
+            settleCurl(commit, if (commit) 260L else 200L)
+            return
+        }
         animator?.cancel()
         val from = animProgress
         val to = if (commit) 1f else 0f
@@ -335,6 +436,10 @@ class PageView @JvmOverloads constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
+        if (animating && turnMode == ReaderPrefs.MODE_CURL && pages.isNotEmpty() && document != null) {
+            drawCurl(canvas)
+            return
+        }
         drawBackground(canvas)
         if (pages.isEmpty() || document == null) return
         if (!animating) {
@@ -384,92 +489,55 @@ class PageView @JvmOverloads constructor(
                 drawPage(canvas, from, 0f, 1f - p, opaque = false)
                 drawPage(canvas, to, 0f, p, opaque = false)
             }
-            else -> drawCurl(canvas, forward, p)
+            else -> drawPage(canvas, from, 0f, 1f)
         }
     }
 
-    /**
-     * 仿真翻页：参照起点阅读——页面从右侧掀起，折线略带弧度，
-     * 折边内侧宽而柔和的阴影，下一页从右侧透出。
-     */
-    private fun drawCurl(canvas: Canvas, forward: Boolean, p: Float) {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val from = pageIndex
-        val to = animTarget
-        val foldX = if (forward) w * (1f - p) else w * p
-        val bulge = 18f * dp * (if (forward) (1f - p) else p)
-
-        if (forward) {
-            drawPage(canvas, to, 0f, 1f)
-            drawEdgeShadow(canvas, foldX, 70f * dp, (70 * (1f - p)).toInt(), toRight = true)
-
-            val path = android.graphics.Path().apply {
-                moveTo(0f, 0f)
-                lineTo(foldX, 0f)
-                quadTo(foldX + bulge, h / 2f, foldX, h)
-                lineTo(0f, h)
-                close()
-            }
-            val save = canvas.save()
-            canvas.clipPath(path)
-            drawPage(canvas, from, 0f, 1f)
-            drawEdgeShadow(canvas, foldX, 150f * dp, (110 * (0.3f + p)).toInt().coerceAtMost(135), toRight = false)
-            canvas.restoreToCount(save)
-            drawFoldLine(canvas, foldX, h, bulge)
-        } else {
-            drawPage(canvas, to, 0f, 1f)
-            drawEdgeShadow(canvas, foldX, 70f * dp, (70 * p).toInt(), toRight = false)
-
-            val path = android.graphics.Path().apply {
-                moveTo(w, 0f)
-                lineTo(foldX, 0f)
-                quadTo(foldX - bulge, h / 2f, foldX, h)
-                lineTo(w, h)
-                close()
-            }
-            val save = canvas.save()
-            canvas.clipPath(path)
-            drawPage(canvas, from, 0f, 1f)
-            drawEdgeShadow(canvas, foldX, 150f * dp, (110 * (0.3f + (1f - p))).toInt().coerceAtMost(135), toRight = true)
-            canvas.restoreToCount(save)
-            drawFoldLine(canvas, foldX, h, -bulge)
+    private fun drawCurl(canvas: Canvas) {
+        val edgeX = curlEdgeX()
+        val anchorY = curlCornerY ?: curlTipY
+        val distance = abs(edgeX - curlTipX)
+        val progress = distance / (2f * width)
+        if ((distance < 0.01f && abs(anchorY - curlTipY) < 0.01f) || progress >= 1f) {
+            drawPage(canvas, if (progress >= 1f) animTarget else pageIndex, 0f, 1f)
+            return
         }
-    }
 
-    private fun drawEdgeShadow(canvas: Canvas, foldX: Float, widthPx: Float, alpha: Int, toRight: Boolean) {
-        if (alpha <= 0 || widthPx <= 0f) return
-        val a = alpha.coerceIn(0, 255)
-        shadePaint.shader = if (toRight) {
-            LinearGradient(
-                foldX, 0f, foldX + widthPx, 0f,
-                intArrayOf(a shl 24, 0x00000000), floatArrayOf(0f, 1f), Shader.TileMode.CLAMP
-            )
-        } else {
-            LinearGradient(
-                foldX - widthPx, 0f, foldX, 0f,
-                intArrayOf(0x00000000, a shl 24), floatArrayOf(0f, 1f), Shader.TileMode.CLAMP
-            )
-        }
-        canvas.drawRect(
-            if (toRight) foldX else foldX - widthPx, 0f,
-            if (toRight) foldX + widthPx else foldX, height.toFloat(),
-            shadePaint
+        curl.update(width.toFloat(), height.toFloat(), edgeX, anchorY, curlTipX, curlTipY)
+        val shadeStrength = minOf(progress * 12f, (1f - progress) * 8f, 1f)
+        drawPage(canvas, animTarget, 0f, 1f)
+        // 折痕投在下一页上的软阴影：更宽更实，避开"纸片悬浮"的观感
+        drawCreaseGradient(canvas, 14f * dp, Color.argb((26 * shadeStrength).toInt(), 0, 0, 0), Color.TRANSPARENT)
+        drawCreaseGradient(canvas, 64f * dp, Color.argb((64 * shadeStrength).toInt(), 0, 0, 0), Color.TRANSPARENT)
+
+        val front = canvas.save()
+        canvas.clipOutPath(curl.exposed)
+        drawPage(canvas, pageIndex, 0f, 1f)
+        canvas.restoreToCount(front)
+
+        val back = canvas.save()
+        canvas.clipPath(curl.paperBack)
+        val reflected = canvas.save()
+        canvas.concat(curl.reflection)
+        drawPageBackdrop(canvas, 0f)
+        drawPage(canvas, pageIndex, 0f, 0.13f, opaque = false)
+        canvas.restoreToCount(reflected)
+        // The paper catches light on the bend and darkens on the reverse side.
+        drawCreaseGradient(
+            canvas, -42f * dp,
+            Color.argb((35 * shadeStrength).toInt(), 255, 255, 255), Color.argb(28, 0, 0, 0)
         )
-        shadePaint.shader = null
+        canvas.restoreToCount(back)
     }
 
-    private fun drawFoldLine(canvas: Canvas, foldX: Float, h: Float, bulge: Float) {
-        val path = android.graphics.Path().apply {
-            moveTo(foldX, 0f)
-            quadTo(foldX + bulge, h / 2f, foldX, h)
-        }
+    private fun drawCreaseGradient(canvas: Canvas, distance: Float, start: Int, end: Int) {
+        foldPaint.shader = LinearGradient(
+            curl.creaseX, curl.creaseY,
+            curl.creaseX + curl.normalX * distance, curl.creaseY + curl.normalY * distance,
+            start, end, Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), foldPaint)
         foldPaint.shader = null
-        foldPaint.style = Paint.Style.STROKE
-        foldPaint.strokeWidth = 1.3f * dp
-        foldPaint.color = 0x4DFFFFFF
-        canvas.drawPath(path, foldPaint)
-        foldPaint.style = Paint.Style.FILL
     }
 
     private fun drawPage(canvas: Canvas, index: Int, dx: Float, alpha: Float, opaque: Boolean = true) {
@@ -488,19 +556,20 @@ class PageView @JvmOverloads constructor(
         layout.draw(canvas)
         canvas.restore()
 
-        footPaint.alpha = a
         footPaint.color = softColor
-        val progress = if (d.text.isEmpty()) 0 else range.first * 100 / d.text.length
+        footPaint.alpha = a
+        val progress = (progressAt(index) * 100).toInt()
         val right = "$progress%"
-        canvas.drawText(right, width - padH - footPaint.measureText(right) + dx, height - 12f * dp, footPaint)
+        canvas.drawText(right, width - padH - footPaint.measureText(right) + dx, height - bottomInset - 12f * dp, footPaint)
         val pageLabel = "${index + 1}/${pages.size}"
-        canvas.drawText(pageLabel, padH + dx, height - 12f * dp, footPaint)
+        canvas.drawText(pageLabel, padH + dx, height - bottomInset - 12f * dp, footPaint)
 
         headPaint.alpha = 255
         footPaint.alpha = 255
         bodyPaint.alpha = 255
     }
 
+    @SuppressLint("WrongConstant")
     private fun layoutFor(index: Int, range: IntRange, d: Document): StaticLayout? {
         layoutCache.get(index)?.let { return it }
         val text = d.text

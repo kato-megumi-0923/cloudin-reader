@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -17,6 +18,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.appcompat.app.AppCompatActivity
+import com.example.liquidglass.LiquidGlassChip
+import com.example.liquidglass.LiquidGlassView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 
 class ReaderActivity : AppCompatActivity() {
@@ -26,7 +29,6 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var topArea: View
     private lateinit var bottomArea: View
     private lateinit var topBar: View
-    private lateinit var bottomBar: View
     private lateinit var settingsPanel: com.example.liquidglass.LiquidGlassView
     private var panelSection = -1
     private lateinit var progressRow: View
@@ -61,6 +63,7 @@ class ReaderActivity : AppCompatActivity() {
             )
             top.setPadding(top.paddingLeft, bars.top, top.paddingRight, top.paddingBottom)
             bottom.setPadding(bottom.paddingLeft, bottom.paddingTop, bottom.paddingRight, bars.bottom)
+            findViewById<PageView>(R.id.pageView).setBottomInset(bars.bottom)
             insets
         }
 
@@ -76,7 +79,6 @@ class ReaderActivity : AppCompatActivity() {
         topArea = findViewById(R.id.topArea)
         bottomArea = findViewById(R.id.bottomArea)
         topBar = findViewById(R.id.topBar)
-        bottomBar = findViewById(R.id.bottomBar)
         settingsPanel = findViewById(R.id.settingsPanel)
         progressRow = findViewById(R.id.progressRow)
         loading = findViewById(R.id.loading)
@@ -94,7 +96,14 @@ class ReaderActivity : AppCompatActivity() {
         pageView.setTurnMode(ReaderPrefs.turnMode(this))
         applyChromeColors()
 
-        findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }
+        val backButton = findViewById<ImageButton>(R.id.btnBack)
+        backButton.isClickable = false
+        backButton.isFocusable = false
+        findViewById<View>(R.id.backBar).apply {
+            contentDescription = backButton.contentDescription
+            backButton.contentDescription = null
+            setOnClickListener { finish() }
+        }
         setupBottomTabs()
 
         pageView.onCenterTap = { toggleBars() }
@@ -103,35 +112,12 @@ class ReaderActivity : AppCompatActivity() {
             updateProgressUi(progress)
         }
         pageView.onChapterChanged = { chapter -> txtChapter.text = chapter }
-        val glassTop = findViewById<View>(R.id.topBar)
-        val glassBack = findViewById<View>(R.id.backBar)
-        listOf(glassTop, glassBack).forEach { bar ->
-            (bar as? com.example.liquidglass.LiquidGlassView)?.apply {
+        listOf(R.id.topBar, R.id.backBar, R.id.bottomBar, R.id.settingsPanel, R.id.progressRow).forEach { id ->
+            findViewById<LiquidGlassView>(id).apply {
                 backdropSource = pageView
                 enableDynamicBackground = true
             }
         }
-        val glassBottom = findViewById<View>(R.id.bottomBar)
-        val liquidBottom = glassBottom as? com.example.liquidglass.LiquidGlassView
-        if (liquidBottom != null) {
-            liquidBottom.backdropSource = pageView
-            liquidBottom.enableDynamicBackground = true
-            liquidBottom.blurAmount = 0.08f
-            liquidBottom.material = com.example.liquidglass.GlassMaterial.REGULAR
-            liquidBottom.saturation = 160f
-            liquidBottom.adaptiveLensScale = true
-            liquidBottom.refractionHeight = dp(12).toFloat()
-            liquidBottom.bevelWidth = dp(24).toFloat()
-            liquidBottom.dispersionStrength = 0.12f
-            liquidBottom.enableEdgeHighlight = true
-        }
-
-        val layoutListener = View.OnLayoutChangeListener { _, l, t, rr, b, ol, ot, orr, ob ->
-            if (rr - l > 0 && b - t > 0 && (rr - l != orr - ol || b - t != ob - ot)) refreshBackdrop()
-        }
-
-
-        pageView.post { refreshBackdrop() }
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -153,8 +139,9 @@ class ReaderActivity : AppCompatActivity() {
     private fun loadDocument() {
         loading.visibility = View.VISIBLE
         Thread {
-            val doc = DocumentLoader.load(book)
+            val doc = runCatching { DocumentLoader.load(book) }.getOrNull()
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (doc == null) {
                     loading.visibility = View.GONE
                     showGlassNotice(
@@ -169,8 +156,7 @@ class ReaderActivity : AppCompatActivity() {
                 pageView.setDocument(doc, start)
                 loading.visibility = View.GONE
                 txtChapter.text = doc.chapterAt(start)
-                updateProgressUi(book.progress)
-                refreshBackdrop()
+                updateProgressUi(lastProgress)
             }
         }.start()
     }
@@ -182,11 +168,9 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun applyChromeColors() {
-        val barColor = ReaderPrefs.background(theme)
         val ink = ReaderPrefs.ink(theme)
         val soft = ReaderPrefs.softInk(theme)
         topBar.setBackgroundColor(Color.TRANSPARENT)
-        if (bottomBar is GlassBar) bottomBar.setBackgroundColor(barColor)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         val lightIcons = theme != ReaderPrefs.THEME_NIGHT
@@ -199,51 +183,38 @@ class ReaderActivity : AppCompatActivity() {
         txtProgress.setTextColor(soft)
         loading.setTextColor(soft)
         findViewById<View>(R.id.root).setBackgroundColor(ReaderPrefs.background(theme))
-        val tabs = listOf(R.id.tabCatalog, R.id.tabProgress, R.id.tabTheme, R.id.tabFont, R.id.tabTurn)
-        tabs.forEach { id ->
-            val group = findViewById<LinearLayout>(id)
-            (group.getChildAt(0) as? TextView)?.setTextColor(ink)
-            (group.getChildAt(1) as? TextView)?.setTextColor(soft)
+        val toolbar = findViewById<LiquidGlassView>(R.id.bottomBar)
+        val row = toolbar.getChildAt(0) as LinearLayout
+        for (index in 0 until row.childCount) {
+            val item = row.getChildAt(index) as LinearLayout
+            (item.getChildAt(0) as TextView).setTextColor(ink)
+            (item.getChildAt(1) as TextView).setTextColor(soft)
         }
     }
 
-    /** 点击交给玻璃本身，这样能触发 LiquidGlassView 的弹性按压动画 */
     private fun setupBottomTabs() {
-        val bar = findViewById<View>(R.id.bottomBar) ?: return
-        val ids = listOf(R.id.tabCatalog, R.id.tabProgress, R.id.tabTheme, R.id.tabFont, R.id.tabTurn)
-        ids.forEach { id ->
-            val tab = findViewById<View>(id)
-            tab.isClickable = false
-            tab.isFocusable = false
-        }
-        bar.isClickable = true
-        val actions = listOf<() -> Unit>(
-            { showCatalog() },
-            { toggleProgressRow() },
-            { showSettings(0) },
-            { showSettings(1) },
-            { showSettings(2) }
+        val actions: List<Pair<Int, () -> Unit>> = listOf(
+            R.id.tabCatalog to { showCatalog() },
+            R.id.tabProgress to { toggleProgressRow() },
+            R.id.tabTheme to { showSettings(0) },
+            R.id.tabFont to { showSettings(1) },
+            R.id.tabTurn to { showSettings(2) }
         )
-        bar.setOnTouchListener { v, ev ->
-            when (ev.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(90).start()
-                    true
+        val toolbar = findViewById<LiquidGlassView>(R.id.bottomBar)
+        val row = toolbar.getChildAt(0) as LinearLayout
+        actions.forEach { (id, action) ->
+            findViewById<LinearLayout>(id).apply {
+                contentDescription = (getChildAt(1) as TextView).text
+                isFocusable = true
+                setOnClickListener { action() }
+                setOnTouchListener { item, event ->
+                    // The item handles the click. The shared glass handles the liquid press.
+                    val glassEvent = MotionEvent.obtain(event)
+                    glassEvent.offsetLocation(item.x + row.x, item.y + row.y)
+                    toolbar.onTouchEvent(glassEvent)
+                    glassEvent.recycle()
+                    false
                 }
-                android.view.MotionEvent.ACTION_UP -> {
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
-                    val loc = IntArray(2)
-                    v.getLocationOnScreen(loc)
-                    val rel = ev.rawX - loc[0]
-                    val idx = (rel / (v.width / ids.size.toFloat())).toInt().coerceIn(0, ids.size - 1)
-                    actions[idx]()
-                    true
-                }
-                android.view.MotionEvent.ACTION_CANCEL -> {
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
-                    true
-                }
-                else -> false
             }
         }
     }
@@ -279,14 +250,6 @@ class ReaderActivity : AppCompatActivity() {
     }
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    private fun refreshBackdrop() {
-        runCatching {
-            (findViewById<View>(R.id.topBar) as? GlassBar)?.captureFrom(pageView)
-            (findViewById<View>(R.id.backBar) as? GlassBar)?.captureFrom(pageView)
-            (findViewById<View>(R.id.bottomBar) as? GlassBar)?.captureFrom(pageView)
-        }
-    }
-
     private fun toggleBars() {
         barsVisible = !barsVisible
         if (!barsVisible) {
@@ -295,7 +258,6 @@ class ReaderActivity : AppCompatActivity() {
         }
         animateBar(topArea, barsVisible)
         animateBar(bottomArea, barsVisible)
-        if (barsVisible) pageView.postDelayed({ refreshBackdrop() }, 60L)
     }
 
     private fun animateBar(view: View, show: Boolean) {
@@ -327,7 +289,9 @@ class ReaderActivity : AppCompatActivity() {
         settingsPanel.translationY = if (settingsPanel.height > 0) settingsPanel.height.toFloat() else 420f
         settingsPanel.animate()
             .translationY(0f)
-            .setDuration(180)
+            .setDuration(340)
+            .setInterpolator(android.view.animation.DecelerateInterpolator(1.8f))
+            .setUpdateListener { settingsPanel.invalidate() }
             .start()
 
 
@@ -417,35 +381,24 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         val chips = mapOf(
-            ReaderPrefs.MODE_NONE to content.findViewById<TextView>(R.id.turnNone),
-            ReaderPrefs.MODE_SLIDE to content.findViewById<TextView>(R.id.turnSlide),
-            ReaderPrefs.MODE_CURL to content.findViewById<TextView>(R.id.turnCurl),
-            ReaderPrefs.MODE_FADE to content.findViewById<TextView>(R.id.turnFade)
+            ReaderPrefs.MODE_NONE to content.findViewById<LiquidGlassChip>(R.id.turnNone),
+            ReaderPrefs.MODE_SLIDE to content.findViewById<LiquidGlassChip>(R.id.turnSlide),
+            ReaderPrefs.MODE_CURL to content.findViewById<LiquidGlassChip>(R.id.turnCurl),
+            ReaderPrefs.MODE_FADE to content.findViewById<LiquidGlassChip>(R.id.turnFade)
         )
-        var chipMode = ReaderPrefs.turnMode(this)
-        fun paintChips() {
-            chips.forEach { (m, chip) ->
-                val selected = m == chipMode
-                chip.setTextColor(if (selected) Color.parseColor("#E0A458") else ReaderPrefs.ink(theme))
-                chip.background = if (selected) {
-                    GradientDrawable().apply {
-                        shape = GradientDrawable.RECTANGLE
-                        cornerRadius = 8 * resources.displayMetrics.density
-                        setColor(Color.parseColor("#FBEFDC"))
-                        setStroke((1 * resources.displayMetrics.density).toInt(), Color.parseColor("#E0A458"))
-                    }
-                } else {
-                    getDrawable(R.drawable.bg_chip)
-                }
-            }
-        }
-        paintChips()
-        chips.forEach { (m, chip) ->
+        var currentMode = ReaderPrefs.turnMode(this)
+        chips.forEach { (mode, chip) ->
+            chip.backdropSource = pageView
+            chip.enableDynamicBackground = true
+            chip.isCheckable = true
+            chip.isChecked = mode == currentMode
             chip.setOnClickListener {
-                chipMode = m
-                ReaderPrefs.setTurnMode(this, m)
-                pageView.setTurnMode(m)
-                paintChips()
+                if (mode != currentMode) {
+                    currentMode = mode
+                    ReaderPrefs.setTurnMode(this, mode)
+                    pageView.setTurnMode(mode)
+                }
+                chips.forEach { (otherMode, other) -> other.isChecked = otherMode == currentMode }
             }
         }
     }
@@ -475,6 +428,7 @@ class ReaderActivity : AppCompatActivity() {
             m.visibility = View.VISIBLE
         }
         val container = content.findViewById<LinearLayout>(R.id.cardRows)
+        val chapterScroll = container.parent as android.widget.ScrollView
         rows.forEachIndexed { index, pair ->
             val tv = TextView(this)
             tv.text = pair.first
@@ -503,27 +457,27 @@ class ReaderActivity : AppCompatActivity() {
         }
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = 26 * resources.displayMetrics.density
-            setColor(0x8CFFFFFF.toInt())
+            setColor(0xCBFFFFFF.toInt())
         }
+        val availableWidth = pageView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val availableHeight = pageView.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val dialogWidth = minOf(dp(345), (availableWidth - dp(32)).coerceAtLeast(1))
+        val maxHeight = (availableHeight * 0.66f).toInt()
+        content.measure(
+            View.MeasureSpec.makeMeasureSpec(dialogWidth, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val fixedHeight = content.measuredHeight - chapterScroll.measuredHeight
+        val maxListHeight = (maxHeight - fixedHeight).coerceAtLeast(0)
+        if (chapterScroll.measuredHeight > maxListHeight) {
+            chapterScroll.layoutParams.height = maxListHeight
+        }
+
         val glass = com.example.liquidglass.LiquidGlassView(this)
         glass.cornerRadius = 26 * resources.displayMetrics.density
         glass.blurAmount = 0.18f
         glass.material = com.example.liquidglass.GlassMaterial.REGULAR
-        val scroll = android.widget.ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
-            addView(content)
-        }
-        val backing = View(this).apply {
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = 26 * resources.displayMetrics.density
-                setColor(0x8CFFFFFF.toInt())
-            }
-        }
-        glass.addView(backing, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ))
-        glass.addView(scroll, FrameLayout.LayoutParams(
+        glass.addView(content, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ))
@@ -532,11 +486,9 @@ class ReaderActivity : AppCompatActivity() {
         dialogWindow?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
         dialogWindow?.setDimAmount(0f)
         dialogWindow?.setWindowAnimations(0)
-        val dlgW = (345 * resources.displayMetrics.density).toInt()
-        val dlgH = (resources.displayMetrics.heightPixels * 0.66f).toInt()
-        dialogWindow?.setLayout(dlgW, dlgH)
         dialogWindow?.setGravity(Gravity.CENTER)
         dialog.show()
+        dialogWindow?.setLayout(dialogWidth, FrameLayout.LayoutParams.WRAP_CONTENT)
         glass.backdropSource = findViewById(android.R.id.content)
         glass.enableDynamicBackground = true
     }
@@ -604,6 +556,16 @@ class ReaderActivity : AppCompatActivity() {
     }
     private fun showCatalog() {
         val doc = document ?: return
+        barsVisible = false
+        listOf(topArea, bottomArea, progressRow, settingsPanel).forEach { view ->
+            view.animate().cancel()
+            view.visibility = View.GONE
+            view.alpha = 1f
+            view.translationY = 0f
+        }
+        panelSection = -1
+        settingsPanel.removeAllViews()
+        progressDialog?.dismiss()
         if (doc.chapters.isEmpty()) {
             showGlassNotice(
                 "目录",
@@ -627,6 +589,7 @@ class ReaderActivity : AppCompatActivity() {
     private var downRawX = 0f
     private var downRawY = 0f
     private var globalSwipeDone = false
+    private var chromeCurlDragging = false
     private val pageLocation = IntArray(2)
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
@@ -635,6 +598,7 @@ class ReaderActivity : AppCompatActivity() {
                 downRawX = ev.rawX
                 downRawY = ev.rawY
                 globalSwipeDone = false
+                chromeCurlDragging = false
             }
             android.view.MotionEvent.ACTION_MOVE -> {
                 if (!globalSwipeDone) {
@@ -648,20 +612,49 @@ class ReaderActivity : AppCompatActivity() {
                             R.id.topBar, R.id.backBar, R.id.bottomBar
                         ).any { id ->
                             val v = findViewById<View>(id) ?: return@any false
-                            if (v.visibility != View.VISIBLE) return@any false
+                            if (!v.isShown) return@any false
                             v.getLocationOnScreen(pageLocation)
                             downRawX >= pageLocation[0] && downRawX <= pageLocation[0] + v.width &&
                                 downRawY >= pageLocation[1] && downRawY <= pageLocation[1] + v.height
                         }
                         if (onChrome && !panelOpen) {
                             globalSwipeDone = true
-                            if (dx < 0) pageView.nextPage() else pageView.prevPage()
+                            val cancel = MotionEvent.obtain(ev)
+                            cancel.action = MotionEvent.ACTION_CANCEL
+                            super.dispatchTouchEvent(cancel)
+                            cancel.recycle()
+                            pageView.getLocationOnScreen(pageLocation)
+                            val y = downRawY - pageLocation[1]
+                            if (pageView.usesCurl) {
+                                chromeCurlDragging = true
+                                val down = MotionEvent.obtain(
+                                    ev.downTime, ev.downTime, MotionEvent.ACTION_DOWN,
+                                    downRawX - pageLocation[0], y, ev.metaState
+                                )
+                                pageView.onTouchEvent(down)
+                                down.recycle()
+                            } else if (dx < 0) {
+                                pageView.nextPage(y)
+                            } else {
+                                pageView.prevPage(y)
+                            }
                         }
                     }
                 }
             }
         }
-        return super.dispatchTouchEvent(ev)
+        if (chromeCurlDragging) {
+            pageView.getLocationOnScreen(pageLocation)
+            val local = MotionEvent.obtain(ev)
+            local.setLocation(ev.rawX - pageLocation[0], ev.rawY - pageLocation[1])
+            pageView.onTouchEvent(local)
+            local.recycle()
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+                chromeCurlDragging = false
+            }
+            return true
+        }
+        return globalSwipeDone || super.dispatchTouchEvent(ev)
     }
     override fun onPause() {
         super.onPause()

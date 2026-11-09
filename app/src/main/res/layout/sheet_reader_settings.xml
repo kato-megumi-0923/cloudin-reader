@@ -162,51 +162,39 @@
             android:layout_marginTop="20dp"
             android:orientation="horizontal">
 
-            <TextView
+            <com.example.liquidglass.LiquidGlassChip
                 android:id="@+id/turnNone"
                 android:layout_width="0dp"
                 android:layout_height="38dp"
                 android:layout_weight="1"
-                android:background="@drawable/bg_glass_chip"
-                android:gravity="center"
                 android:text="无"
-                android:textColor="@color/reader_ink"
                 android:textSize="13sp" />
 
-            <TextView
+            <com.example.liquidglass.LiquidGlassChip
                 android:id="@+id/turnSlide"
                 android:layout_width="0dp"
                 android:layout_height="38dp"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
-                android:background="@drawable/bg_glass_chip"
-                android:gravity="center"
                 android:text="平移"
-                android:textColor="@color/reader_ink"
                 android:textSize="13sp" />
 
-            <TextView
+            <com.example.liquidglass.LiquidGlassChip
                 android:id="@+id/turnCurl"
                 android:layout_width="0dp"
                 android:layout_height="38dp"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
-                android:background="@drawable/bg_glass_chip"
-                android:gravity="center"
                 android:text="仿真"
-                android:textColor="@color/reader_ink"
                 android:textSize="13sp" />
 
-            <TextView
+            <com.example.liquidglass.LiquidGlassChip
                 android:id="@+id/turnFade"
                 android:layout_width="0dp"
                 android:layout_height="38dp"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
-                android:background="@drawable/bg_glass_chip"
-                android:gravity="center"
                 android:text="淡入"
-                android:textColor="@color/reader_ink"
                 android:textSize="13sp" />
         </LinearLayout>
     </LinearLayout>

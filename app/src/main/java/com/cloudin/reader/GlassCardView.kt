@@ -144,7 +144,7 @@ class GlassCardView @JvmOverloads constructor(
             m.postTranslate(-(ml[0] - srcX).toFloat(), -(ml[1] - srcY).toFloat())
             s.setLocalMatrix(m)
             val liquid = LiquidGlass.create()
-            if (liquid != null) {
+            if (android.os.Build.VERSION.SDK_INT >= 33 && liquid != null) {
                 liquid.setInputShader("content", s)
                 LiquidGlass.configure(liquid, w, h, dp(26f), 0.55f)
                 backdropPaint.shader = liquid
