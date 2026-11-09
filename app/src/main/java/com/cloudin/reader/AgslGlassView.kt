@@ -130,8 +130,9 @@ class AgslGlassView @JvmOverloads constructor(
         val n = node ?: return
         runCatching {
             val recording = n.beginRecording(w, h)
-            getLocationInWindow(location)
-            target.getLocationInWindow(sourceLocation)
+            // 对话框是独立 window，必须用屏幕坐标对齐，否则采到的是错位的区域（会露出黑块）
+            getLocationOnScreen(location)
+            target.getLocationOnScreen(sourceLocation)
             recording.translate(
                 -(location[0] - sourceLocation[0]).toFloat(),
                 -(location[1] - sourceLocation[1]).toFloat()
