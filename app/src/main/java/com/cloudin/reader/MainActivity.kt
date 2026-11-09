@@ -746,14 +746,12 @@ class MainActivity : AppCompatActivity() {
         val memberCount = BookStore.load(this).count { it.groupId == group.id }
         val check = CheckBox(this).apply {
             text = "同时从书架删除（$memberCount 本）"
-            textSize = 14f
-            setTextColor(Color.parseColor("#C0442E"))
-            setPadding(dp(14), dp(6), dp(14), dp(6))
+            textSize = 13f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(Color.parseColor("#8A857D"))
             isChecked = false
         }
-        rows.addView(check)
 
-        addCardRow(content, "不勾选：书籍回到书架，只删除分组", Color.parseColor("#999999"), clickable = false)
         addCardRow(content, "确认删除", Color.parseColor("#C0442E")) {
             if (check.isChecked) {
                 BookStore.load(this).filter { it.groupId == group.id }.forEach { BookStore.remove(this, it) }
@@ -763,6 +761,27 @@ class MainActivity : AppCompatActivity() {
             reload()
             dialog.dismiss()
         }
+        (rows.getChildAt(rows.childCount - 1) as? View)?.let { confirmRow ->
+            confirmRow.background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(0x1FC0442E)
+            }
+            confirmRow.findViewById<TextView>(R.id.cardRowText)?.apply {
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            }
+        }
+        val checkRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER
+        }
+        checkRow.addView(check)
+        rows.addView(
+            checkRow,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2); bottomMargin = dp(8) }
+        )
         content.findViewById<View>(R.id.cardCancel).setOnClickListener { dialog.dismiss() }
         showCard(dialog, content)
     }
