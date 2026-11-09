@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -30,7 +31,7 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var topArea: View
     private lateinit var bottomArea: View
     private lateinit var topBar: View
-    private lateinit var settingsPanel: com.example.liquidglass.LiquidGlassView
+    private lateinit var settingsPanel: AgslGlassView
     private var panelSection = -1
     private lateinit var progressRow: View
     private lateinit var loading: TextView
@@ -115,10 +116,29 @@ class ReaderActivity : AppCompatActivity() {
             updateProgressUi(progress)
         }
         pageView.onChapterChanged = { chapter -> txtChapter.text = chapter }
-        listOf(R.id.topBar, R.id.backBar, R.id.bottomBar, R.id.settingsPanel, R.id.progressRow).forEach { id ->
-            findViewById<LiquidGlassView>(id).apply {
-                backdropSource = pageView
-                enableDynamicBackground = true
+        listOf(
+            R.id.topBar to 22f,
+            R.id.backBar to 23f,
+            R.id.bottomBar to 27f,
+            R.id.settingsPanel to 24f,
+            R.id.progressRow to 23f
+        ).forEach { (id, radiusDp) ->
+            findViewById<View>(id)?.let { view ->
+                when (view) {
+                    is AgslGlassView -> {
+                        view.backdropSource = pageView
+                        view.cornerRadius = dp(radiusDp.toInt()).toFloat()
+                        view.refractionHeight = dp(16).toFloat()
+                        view.refractionAmount = dp(24).toFloat()
+                        view.blurRadius = dp(7).toFloat()
+                        view.dispersion = 0.16f
+                        view.tintAlpha = 0.10f
+                    }
+                    is com.example.liquidglass.LiquidGlassView -> {
+                        view.backdropSource = pageView
+                        view.enableDynamicBackground = true
+                    }
+                }
             }
         }
         GlassStyle.load(this).applyTo(rootView)
@@ -188,7 +208,7 @@ class ReaderActivity : AppCompatActivity() {
         txtProgress.setTextColor(soft)
         loading.setTextColor(soft)
         findViewById<View>(R.id.root).setBackgroundColor(ReaderPrefs.background(theme))
-        val toolbar = findViewById<LiquidGlassView>(R.id.bottomBar)
+        val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
         val row = toolbar.getChildAt(0) as LinearLayout
         for (index in 0 until row.childCount) {
             val item = row.getChildAt(index) as LinearLayout
@@ -205,7 +225,7 @@ class ReaderActivity : AppCompatActivity() {
             R.id.tabFont to { showSettings(1) },
             R.id.tabTurn to { showSettings(2) }
         )
-        val toolbar = findViewById<LiquidGlassView>(R.id.bottomBar)
+        val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
         val row = toolbar.getChildAt(0) as LinearLayout
         actions.forEach { (id, action) ->
             findViewById<LinearLayout>(id).apply {
@@ -226,7 +246,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun toggleProgressRow() {
         hideSettingsPanel()
-        val glass = progressRow as com.example.liquidglass.LiquidGlassView
+        val glass = progressRow as AgslGlassView
         if (progressRow.visibility == View.VISIBLE) {
             progressRow.animate()
                 .alpha(0f)
@@ -241,7 +261,6 @@ class ReaderActivity : AppCompatActivity() {
         } else {
             glass.cornerRadius = dp(24).toFloat()
             glass.backdropSource = pageView
-            glass.enableDynamicBackground = true
             progressRow.visibility = View.VISIBLE
             progressRow.alpha = 0f
             progressRow.translationY = dp(18).toFloat()
@@ -291,7 +310,6 @@ class ReaderActivity : AppCompatActivity() {
         settingsPanel.visibility = View.VISIBLE
         settingsPanel.cornerRadius = 24 * resources.displayMetrics.density
         settingsPanel.backdropSource = pageView
-        settingsPanel.enableDynamicBackground = true
         settingsPanel.translationY = if (settingsPanel.height > 0) settingsPanel.height.toFloat() else 420f
         settingsPanel.animate()
             .translationY(0f)
