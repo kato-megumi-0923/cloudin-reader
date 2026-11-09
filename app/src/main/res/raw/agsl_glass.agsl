@@ -1,0 +1,221 @@
+// Adapted from IT之家 (iruanmi) fork of AndroidLiquidGlassView (MIT).
+// Original: Copyright (c) 2025 QmDeve - https://github.com/QmDeve/AndroidLiquidGlassView
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 QmDeve
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ * ===========================================
+ * Project: AndroidLiquidGlassView
+ * Author: QmDeve
+ * GitHub: https://github.com/QmDeve/AndroidLiquidGlassView
+ *
+ * Contributors:
+ * - Donny Yale - https://github.com/QmDeve
+ * - Ahmed Sbai - https://github.com/sbaiahmed1
+ *
+ * Modified By iruanmi.com
+ *
+ * ===========================================
+ */
+
+uniform shader rmContent;
+
+uniform float u_time;
+uniform float2 size;
+uniform float2 offset;
+uniform float4 cornerRadius;
+uniform float refractionHeight;
+uniform float refractionAmount;
+uniform float2 refractionAxis;
+
+uniform float isDark;
+uniform float lr;
+uniform float ld;
+uniform float dr;
+uniform float dd;
+uniform float edgeHighlight;
+
+uniform float depthEffect;
+uniform float dispersion;
+uniform float edgeDispersion;
+
+uniform float contrast;
+uniform float whitePoint;
+uniform float chromaMultiplier;
+
+uniform float3 tintColor;
+uniform float tintAlpha;
+
+const half3 rgbToY = half3(0.2126, 0.7152, 0.0722);
+
+float radiusAt(float2 coord, float4 radii) {
+    if (coord.x >= 0.0) {
+        if (coord.y <= 0.0) return radii.y; // 右上角
+        else return radii.z;                // 右下角
+    } else {
+        if (coord.y <= 0.0) return radii.x; // 左上角
+        else return radii.w;                // 左下角
+    }
+}
+
+float sdRoundedRect(float2 coord, float2 halfSize, float radius) {
+    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
+    float outside = length(max(cornerCoord, 0.0)) - radius;
+    float inside = min(max(cornerCoord.x, cornerCoord.y), 0.0);
+    return outside + inside;
+}
+
+float safeSign(float value) {
+    return value < 0.0 ? -1.0 : 1.0;
+}
+
+float2 safeNormalize(float2 value, float2 fallback) {
+    float len = length(value);
+    if (len > 0.001) {
+        return value / len;
+    }
+    return fallback;
+}
+
+float2 gradSdRoundedRect(float2 coord, float2 halfSize, float radius) {
+    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
+    if (cornerCoord.x >= 0.0 || cornerCoord.y >= 0.0) {
+        float2 outside = max(cornerCoord, 0.0);
+        float outsideLength = length(outside);
+        if (outsideLength > 0.001) {
+            return sign(coord) * (outside / outsideLength);
+        }
+        float useX = step(cornerCoord.y, cornerCoord.x);
+        return float2(
+            useX * safeSign(coord.x),
+            (1.0 - useX) * safeSign(coord.y)
+        );
+    } else {
+        float gradX = step(cornerCoord.y, cornerCoord.x);
+        return sign(coord) * float2(gradX, 1.0 - gradX);
+    }
+}
+
+float circleMap(float x) {
+    return 1.0 - sqrt(1.0 - x * x);
+}
+
+half4 saturateColor(half4 color, float amount) {
+    half3 lin = toLinearSrgb(color.rgb);
+    float y = dot(lin, rgbToY);
+    half3 gray = half3(y);
+    half3 sat = fromLinearSrgb(mix(gray, lin, amount));
+    return half4(sat, color.a);
+}
+
+half4 main(float2 coord) {
+    float2 halfSize = size * 0.5;
+    float2 centeredCoord = (coord + offset) - halfSize;
+    float radius = radiusAt(centeredCoord, cornerRadius);
+
+    float sd = sdRoundedRect(centeredCoord, halfSize, radius);
+
+    if(sd > 0){
+        return half4(0.0);;
+    }
+
+    float3 finalTintColor = tintColor;//mix(tintColor, adaptiveTintColor, 0.8); // 80% 权重交给智能自适应
+    float finalTintAlpha = tintAlpha;//mix(tintAlpha, adaptiveTintAlpha, 0.8);
+
+    if (-sd >= refractionHeight) {
+        half4 baseColor = rmContent.eval(coord);
+
+        baseColor = saturateColor(baseColor, chromaMultiplier);
+        float3 target = (whitePoint > 0.0) ? float3(1.0) : float3(0.0);
+        baseColor.rgb = mix(baseColor.rgb, target, abs(whitePoint));
+        baseColor.rgb = (baseColor.rgb - 0.5) * (1.0 + contrast) + 0.5;
+
+        half3 tintedRGB = mix(baseColor.rgb, finalTintColor, finalTintAlpha);
+        return half4(tintedRGB, baseColor.a);
+    }
+
+    sd = min(sd, 0.0);
+    float safeHeight = max(refractionHeight, 0.001);
+    float slopeProgress = -sd / safeHeight;
+
+    float d = circleMap(1.0 - -sd / safeHeight) * refractionAmount;
+    float smoothRadius = max(radius * 1.5, 30.0);
+    float gradRadius = min(smoothRadius, min(halfSize.x, halfSize.y));
+
+    float2 shapeGrad = gradSdRoundedRect(centeredCoord, halfSize, gradRadius);
+    float2 depthGrad = safeNormalize(centeredCoord, shapeGrad);
+    float2 grad = safeNormalize(shapeGrad + depthEffect * depthGrad, shapeGrad);
+
+    float2 refractedCoord = coord + d * grad * refractionAxis;
+
+    float area = max(halfSize.x * halfSize.y, 0.001);
+    float legacyDispersion = dispersion * ((centeredCoord.x * centeredCoord.y) / area);
+    float edgeDispersionIntensity = dispersion * (1.0 - smoothstep(0.0, 1.0, slopeProgress));
+    float dispersionIntensity = mix(legacyDispersion, edgeDispersionIntensity, edgeDispersion);
+    float2 dispersedCoord = d * grad * refractionAxis * dispersionIntensity;
+
+    half4 color = half4(0.0);
+
+    half4 pRed = rmContent.eval(refractedCoord + dispersedCoord);
+    color.r += pRed.r * 0.40;
+    color.a += pRed.a * 0.25;
+
+    half4 pYellow = rmContent.eval(refractedCoord + dispersedCoord * 0.4);
+    color.r += pYellow.r * 0.35;
+    color.g += pYellow.g * 0.45;
+    color.a += pYellow.a * 0.25;
+
+    half4 pGreen = rmContent.eval(refractedCoord);
+    color.g += pGreen.g * 0.35;
+    color.b += pGreen.b * 0.20;
+    color.a += pGreen.a * 0.25;
+
+    half4 pBlue = rmContent.eval(refractedCoord - dispersedCoord * 0.8);
+    color.r += pBlue.r * 0.25;
+    color.b += pBlue.b * 0.80;
+    color.g += pBlue.g * 0.20;
+    color.a += pBlue.a * 0.25;
+
+    color = saturateColor(color, chromaMultiplier);
+    float3 target = (whitePoint > 0.0) ? float3(1.0) : float3(0.0);
+    color.rgb = mix(color.rgb, target, abs(whitePoint));
+    color.rgb = (color.rgb - 0.5) * (1.0 + contrast) + 0.5;
+
+    half3 tintedRGB = mix(color.rgb, finalTintColor, finalTintAlpha);
+
+    float lightBgShadow = smoothstep(0.0, lr, slopeProgress) * ld + (1.0 - ld);
+    float darkBgGlow = (1.0 - smoothstep(0.0, dr, slopeProgress)) * dd;
+
+    tintedRGB *= mix(lightBgShadow, 1.0, isDark);
+    tintedRGB += float3(mix(0.0, darkBgGlow, isDark));
+
+    float2 lightDir = safeNormalize(float2(0.0, 0.0), float2(0.0, 0.001));
+    float lightMatch = max(dot(shapeGrad, lightDir), 0.0);
+
+    float highlightIntensity = smoothstep(0.0, 0.08, slopeProgress) * smoothstep(0.3, 0.15, slopeProgress);
+
+    float specular = pow(lightMatch, 16.0) * highlightIntensity * edgeHighlight;
+
+    tintedRGB += float3(specular);
+
+    return half4(tintedRGB, color.a);
+}

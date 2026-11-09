@@ -643,14 +643,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCard(dialog: Dialog, content: View, windowAnimations: Int = R.style.SettingsCardAnimation) {
+        // 背景交给 AGSL 着色器画，content 只保留很小的白色蒙版保证文字可读
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = dp(26).toFloat()
-            setColor(0x8CFFFFFF.toInt())
+            setColor(0x2EFFFFFF)
         }
-        val glass = LiquidGlassView(this)
-        glass.cornerRadius = dp(26).toFloat()
-        glass.blurAmount = 0.42f
-        glass.material = com.example.liquidglass.GlassMaterial.REGULAR
+        val glass = AgslGlassView(this).apply {
+            cornerRadius = dp(26).toFloat()
+            blurRadius = dp(11).toFloat()
+            tintColor = 0xFFFFFFFF.toInt()
+            tintAlpha = 0.10f
+            refractionHeight = dp(22).toFloat()
+            refractionAmount = dp(30).toFloat()
+            dispersion = 0.16f
+        }
         glass.addView(
             content,
             FrameLayout.LayoutParams(
@@ -658,7 +664,6 @@ class MainActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.WRAP_CONTENT
             )
         )
-        GlassStyle.load(this).applyTo(glass)
         dialog.setContentView(glass)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setDimAmount(0f)
@@ -667,7 +672,6 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setLayout(dp(345), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setGravity(Gravity.CENTER)
         glass.backdropSource = findViewById(R.id.root)
-        glass.enableDynamicBackground = true
     }
 
     private fun addCardRow(
