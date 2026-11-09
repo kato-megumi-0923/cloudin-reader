@@ -72,6 +72,8 @@ class MainActivity : AppCompatActivity() {
     private var lensIcon: ImageView? = null
     private var lensActive = false
     private var lensIndex = -1
+    private var lensDownX = 0f
+    private var lensDownY = 0f
     private var shelfFormat = ShelfFormat.ALL
     private var currentTab = Tab.SHELF
     private var currentGroup: BookGroup? = null
@@ -320,6 +322,8 @@ class MainActivity : AppCompatActivity() {
             when (ev.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> if (inside) {
                     lensIndex = (((ev.rawX - pos[0]) / bar.width) * 4).toInt().coerceIn(0, 3)
+                    lensDownX = ev.rawX
+                    lensDownY = ev.rawY
                     lensActive = true
                     showLens(ev.rawX, ev.rawY, rootPos)
                     return true
@@ -348,16 +352,32 @@ class MainActivity : AppCompatActivity() {
         lens.bringToFront()
         lens.elevation = dp(18).toFloat()
         lens.alpha = 0f
-        lens.scaleX = 0.8f
-        lens.scaleY = 0.8f
-        moveLens(rawX, rawY, rootPos)
-        lens.animate().alpha(1f).scaleX(1.32f).scaleY(1.32f).setDuration(140).start()
-    }
-
-    private fun moveLens(rawX: Float, rawY: Float, rootPos: IntArray) {
-        val lens = lensView ?: return
+        lens.scaleX = 0.72f
+        lens.scaleY = 0.72f
         lens.x = rawX - rootPos[0] - lens.width / 2f
         lens.y = rawY - rootPos[1] - lens.height / 2f
+        // 按下先弹到 1.15 倍（比底栏图标明显大一圈）
+        lens.animate().alpha(1f).scaleX(1.15f).scaleY(1.15f)
+            .setDuration(160)
+            .setInterpolator(android.view.animation.OvershootInterpolator(2.2f))
+            .start()
+    }
+
+    /** 跟手 + 弹性：拖得越远，透镜越大且沿拖动方向轻微拉伸。 */
+    private fun moveLens(rawX: Float, rawY: Float, rootPos: IntArray) {
+        val lens = lensView ?: return
+        lens.animate().cancel()
+        // cancel 会把入场 alpha 动画掐断在半途，这里显式拉满
+        lens.alpha = 1f
+        lens.x = rawX - rootPos[0] - lens.width / 2f
+        lens.y = rawY - rootPos[1] - lens.height / 2f
+        val dx = rawX - lensDownX
+        val dy = rawY - lensDownY
+        val dist = kotlin.math.hypot(dx, dy)
+        val k = (dist / dp(240).toFloat()).coerceIn(0f, 1f)
+        val base = 1.15f + 0.45f * k
+        lens.scaleX = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) base * (1f + 0.10f * k) else base * (1f - 0.04f * k)
+        lens.scaleY = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) base * (1f - 0.04f * k) else base * (1f + 0.10f * k)
     }
 
     private fun finishLens(rawX: Float, rawY: Float, rootPos: IntArray, bar: View, barPos: IntArray) {
@@ -367,16 +387,19 @@ class MainActivity : AppCompatActivity() {
         val lens = lensView ?: return
         val targetIndex = target.coerceIn(0, 3)
         val itemWidth = bar.width / 4f
-        val cx = barPos[0] + itemWidth * (targetIndex + 0.5f) - rootPos[0]
-        val cy = barPos[1] + bar.height / 2f - rootPos[1]
+        val cx = barPos[0] + itemWidth * (targetIndex + 0.5f) - rootPos[0] - lens.width / 2f
+        val cy = barPos[1] + bar.height / 2f - rootPos[1] - lens.height / 2f
+        // 松手：回弹到目标图标位置（overshoot），同时缩回 1 倍并淡出
         lens.animate()
-            .x(cx - lens.width / 2f)
-            .y(cy - lens.height / 2f)
-            .scaleX(1f).scaleY(1f).alpha(0f)
-            .setDuration(180)
+            .x(cx).y(cy)
+            .scaleX(1f).scaleY(1f)
+            .setDuration(260)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.8f))
             .withEndAction {
-                lens.visibility = View.INVISIBLE
-                lensActive = false
+                lens.animate().alpha(0f).setDuration(90).withEndAction {
+                    lens.visibility = View.INVISIBLE
+                    lensActive = false
+                }.start()
             }
             .start()
         if (inside || targetIndex != lensIndex) {
@@ -390,7 +413,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun hideLens() {
         val lens = lensView ?: return
-        lens.animate().alpha(0f).setDuration(120).withEndAction { lens.visibility = View.INVISIBLE }.start()
+        lens.animate().alpha(0f).scaleX(0.9f).scaleY(0.9f).setDuration(110)
+            .withEndAction { lens.visibility = View.INVISIBLE }.start()
         lensActive = false
     }
     private fun setupRecycler() {
