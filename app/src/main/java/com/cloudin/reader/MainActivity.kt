@@ -605,7 +605,7 @@ class MainActivity : AppCompatActivity() {
             }.start()
     }
 
-    private fun showCard(dialog: Dialog, content: View, windowAnimations: Int = 0) {
+    private fun showCard(dialog: Dialog, content: View, windowAnimations: Int = R.style.SettingsCardAnimation) {
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = dp(26).toFloat()
             setColor(0x8CFFFFFF.toInt())
@@ -745,7 +745,7 @@ class MainActivity : AppCompatActivity() {
 
         val memberCount = BookStore.load(this).count { it.groupId == group.id }
         val check = CheckBox(this).apply {
-            text = "同时从书架删除（$memberCount 本）"
+            text = "同时从书架删除"
             textSize = 13f
             gravity = android.view.Gravity.CENTER
             setTextColor(Color.parseColor("#8A857D"))
@@ -758,13 +758,23 @@ class MainActivity : AppCompatActivity() {
             }
             GroupStore.remove(this, group.id)
             if (currentGroup?.id == group.id) currentGroup = null
-            reload()
+            dialog.setOnDismissListener {
+                dialog.setOnDismissListener(null)
+                reload()
+            }
             dialog.dismiss()
         }
         (rows.getChildAt(rows.childCount - 1) as? View)?.let { confirmRow ->
             confirmRow.background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(0x1FC0442E)
+                cornerRadius = dp(22).toFloat()
+                setColor(0x24C0442E)
+            }
+            confirmRow.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)
+            ).apply {
+                marginStart = dp(16)
+                marginEnd = dp(16)
+                topMargin = dp(4)
             }
             confirmRow.findViewById<TextView>(R.id.cardRowText)?.apply {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
