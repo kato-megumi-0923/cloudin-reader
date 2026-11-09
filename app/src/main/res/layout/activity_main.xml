@@ -163,8 +163,8 @@
 
     <com.cloudin.reader.LensView
         android:id="@+id/tabLens"
-        android:layout_width="62dp"
-        android:layout_height="58dp"
+        android:layout_width="86dp"
+        android:layout_height="86dp"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="16dp"
         android:visibility="invisible" />

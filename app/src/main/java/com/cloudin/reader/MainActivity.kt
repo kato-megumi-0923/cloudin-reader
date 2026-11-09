@@ -283,6 +283,8 @@ class MainActivity : AppCompatActivity() {
         showHeaderMenu(btnFormat, items, selectedIndex = shelfFormat.ordinal)
     }
 
+    private val tabNames = listOf("书架", "分组", "喜爱", "我的")
+
     private val tabDrawables = listOf(
         R.drawable.ic_tab_shelf, R.drawable.ic_tab_groups,
         R.drawable.ic_tab_fav, R.drawable.ic_tab_profile
@@ -295,7 +297,7 @@ class MainActivity : AppCompatActivity() {
             imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
         }
         lensIcon = icon
-        lensView?.addView(icon, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
+        lensView?.addView(icon, FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER))
         (findViewById<View>(R.id.root) as? ViewGroup)?.clipChildren = false
         // 底栏在系统手势区里，排除掉竖向手势，否则往上拖会被系统"回到桌面"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -347,18 +349,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun showLens(rawX: Float, rawY: Float, rootPos: IntArray) {
         val lens = lensView ?: return
-        lensIcon?.setImageResource(tabDrawables[lensIndex.coerceIn(0, 3)])
+        val idx = lensIndex.coerceIn(0, 3)
+        lensIcon?.setImageResource(tabDrawables[idx])
         lens.visibility = View.VISIBLE
         lens.bringToFront()
         lens.elevation = dp(18).toFloat()
         lens.alpha = 0f
-        lens.scaleX = 0.72f
-        lens.scaleY = 0.72f
+        lens.scaleX = 0.85f
+        lens.scaleY = 0.85f
         lens.x = rawX - rootPos[0] - lens.width / 2f
         lens.y = rawY - rootPos[1] - lens.height / 2f
+        findViewById<View>(R.id.bottomBar)?.animate()?.scaleX(0.95f)?.scaleY(0.95f)?.setDuration(180)?.start()
         // 按下先弹到 1.15 倍（比底栏图标明显大一圈）
-        lens.animate().alpha(1f).scaleX(1.15f).scaleY(1.15f)
-            .setDuration(160)
+        lens.animate().alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(180)
+
             .setInterpolator(android.view.animation.OvershootInterpolator(2.2f))
             .start()
     }
@@ -375,7 +380,7 @@ class MainActivity : AppCompatActivity() {
         val dy = rawY - lensDownY
         val dist = kotlin.math.hypot(dx, dy)
         val k = (dist / dp(240).toFloat()).coerceIn(0f, 1f)
-        val base = 1.15f + 0.45f * k
+        val base = 1f + 0.10f * k
         lens.scaleX = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) base * (1f + 0.10f * k) else base * (1f - 0.04f * k)
         lens.scaleY = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) base * (1f - 0.04f * k) else base * (1f + 0.10f * k)
     }
@@ -392,10 +397,11 @@ class MainActivity : AppCompatActivity() {
         // 松手：回弹到目标图标位置（overshoot），同时缩回 1 倍并淡出
         lens.animate()
             .x(cx).y(cy)
-            .scaleX(1f).scaleY(1f)
+            .scaleX(0.62f).scaleY(0.62f)
             .setDuration(260)
-            .setInterpolator(android.view.animation.OvershootInterpolator(1.8f))
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f))
             .withEndAction {
+                findViewById<View>(R.id.bottomBar)?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(160)?.start()
                 lens.animate().alpha(0f).setDuration(90).withEndAction {
                     lens.visibility = View.INVISIBLE
                     lensActive = false
