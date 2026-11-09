@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -740,8 +741,23 @@ class MainActivity : AppCompatActivity() {
         val dialog = Dialog(this)
         val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
         content.findViewById<TextView>(R.id.cardTitle).text = "删除「${group.name}」？"
-        addCardRow(content, "书籍会回到书架，不会被删除", Color.parseColor("#999999"), clickable = false)
+        val rows = content.findViewById<LinearLayout>(R.id.cardRows)
+
+        val memberCount = BookStore.load(this).count { it.groupId == group.id }
+        val check = CheckBox(this).apply {
+            text = "同时从书架删除（$memberCount 本）"
+            textSize = 14f
+            setTextColor(Color.parseColor("#C0442E"))
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+            isChecked = false
+        }
+        rows.addView(check)
+
+        addCardRow(content, "不勾选：书籍回到书架，只删除分组", Color.parseColor("#999999"), clickable = false)
         addCardRow(content, "确认删除", Color.parseColor("#C0442E")) {
+            if (check.isChecked) {
+                BookStore.load(this).filter { it.groupId == group.id }.forEach { BookStore.remove(this, it) }
+            }
             GroupStore.remove(this, group.id)
             if (currentGroup?.id == group.id) currentGroup = null
             reload()

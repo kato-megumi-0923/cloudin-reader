@@ -9,7 +9,6 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
-import java.util.concurrent.Future
 
 /**
  * 书架卡片，仿 OPPO 阅读：
@@ -31,7 +30,7 @@ class BookCoverView @JvmOverloads constructor(
     private var coverPath: String? = null
     private var loadedKey: CoverThumbnailLoader.Key? = null
     private var pendingKey: CoverThumbnailLoader.Key? = null
-    private var request: Future<*>? = null
+    private var request: CoverThumbnailLoader.Request? = null
     private var requestGeneration = 0
 
     /** 封面整体是否偏亮，角标据此在深/浅两套配色间切换 */
@@ -119,7 +118,7 @@ class BookCoverView @JvmOverloads constructor(
 
     private fun cancelThumbnailRequest() {
         requestGeneration++
-        request?.cancel(false)
+        request?.cancel()
         request = null
         pendingKey = null
     }

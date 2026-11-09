@@ -130,15 +130,11 @@ class ReadingStatsActivity : AppCompatActivity() {
         val bookCard = card { show(Page.BOOKS, animate = true) }
         bookCard.addView(label("已读书籍", 13f, muted))
         bookCard.addView(metricRow("已读  $completed / ${books.size} 本书", true), gap(24))
-        val progressTrack = FrameLayout(this@ReadingStatsActivity).apply { setBackgroundColor(lightDay) }
-        if (books.isNotEmpty() && completed > 0) {
-            progressTrack.addView(View(this@ReadingStatsActivity).apply { setBackgroundColor(accent) }, FrameLayout.LayoutParams(0, -1))
-            progressTrack.addOnLayoutChangeListener { view, l, _, r, _, oldL, _, oldR, _ ->
-                if (r - l != oldR - oldL) (view as FrameLayout).getChildAt(0).layoutParams =
-                    FrameLayout.LayoutParams((view.width.toLong() * completed / books.size).toInt(), -1)
-            }
-        }
-        bookCard.addView(progressTrack, LinearLayout.LayoutParams(-1, dp(9)).apply { topMargin = dp(10) })
+        val ratio = if (books.isEmpty()) 0f else completed.toFloat() / books.size
+        bookCard.addView(
+            RatioBarView(this@ReadingStatsActivity, ratio),
+            LinearLayout.LayoutParams(-1, dp(9)).apply { topMargin = dp(10) }
+        )
         addView(bookCard)
 
         val month = YearMonth.from(today)

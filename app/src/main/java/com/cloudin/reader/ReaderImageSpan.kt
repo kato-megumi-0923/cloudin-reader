@@ -22,7 +22,11 @@ internal class ReaderImageSpan(
     private val placeholder = Paint().apply { color = 0x18000000 }
     private val bounds = RectF()
     private val clip = Rect()
-    private var requesting = false
+
+    init {
+        // 分页时就预解码，避免第一帧在 draw 里做磁盘 IO
+        CoverThumbnailLoader.load(key) { onReady() }
+    }
 
     override fun getSize(paint: Paint, text: CharSequence, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int {
         fm?.apply {
@@ -41,20 +45,14 @@ internal class ReaderImageSpan(
         bounds.set(left, (y - imageHeight).toFloat(), left + imageWidth, y.toFloat())
         if (!canvas.getClipBounds(clip) || bounds.left >= clip.right || bounds.right <= clip.left ||
             bounds.top >= clip.bottom || bounds.bottom <= clip.top) return
-        val result = CoverThumbnailLoader.cached(key)
-        val image = result?.bitmap
+        val image = CoverThumbnailLoader.cached(key)?.bitmap
         if (image != null) {
             imagePaint.alpha = paint.alpha
             canvas.drawBitmap(image, null, bounds, imagePaint)
         } else {
             canvas.drawRect(bounds, placeholder)
-            if (result == null && !requesting) {
-                requesting = true
-                CoverThumbnailLoader.load(key) {
-                    requesting = false
-                    onReady()
-                }
-            }
+            // 预解码尚未完成时再挂一次请求；loader 会合并同一 key，不会重复解码
+            CoverThumbnailLoader.load(key) { onReady() }
         }
     }
 }
