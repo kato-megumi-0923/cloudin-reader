@@ -140,14 +140,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val headerBackdrop = findViewById<View>(R.id.bgLayer)
-        listOf(R.id.btnMode, R.id.btnFormat, R.id.btnSelect, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
+        listOf(R.id.btnMode, R.id.btnFormat, R.id.btnSearch, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
             .forEach { id ->
                 findViewById<LiquidGlassButton>(id).apply {
                     backdropSource = headerBackdrop
                     enableDynamicBackground = true
                     val horizontalPadding = when (id) {
                         R.id.btnMode, R.id.btnImport -> 0
-                        R.id.btnFormat -> dp(10)
+                        R.id.btnFormat, R.id.btnSearch -> dp(10)
                         else -> dp(14)
                     }
                     textView.setPadding(horizontalPadding, 0, horizontalPadding, 0)
@@ -201,7 +201,7 @@ class MainActivity : AppCompatActivity() {
         applyLayoutMode()
 
         findViewById<View>(R.id.btnImport).setOnClickListener { showAddMenu(it) }
-        findViewById<View>(R.id.btnSelect).setOnClickListener { startSelecting(null) }
+        findViewById<View>(R.id.btnSearch).setOnClickListener { startActivity(SearchActivity.intent(this)) }
         findViewById<View>(R.id.btnCancelSelect).setOnClickListener { exitSelecting() }
         findViewById<View>(R.id.btnSelectAll).setOnClickListener { toggleSelectAll() }
         findViewById<View>(R.id.actGroup).setOnClickListener { showGroupPicker() }

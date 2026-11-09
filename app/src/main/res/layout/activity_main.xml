@@ -76,11 +76,11 @@
                     app:cornerRadius="999dp" />
 
                 <com.example.liquidglass.LiquidGlassButton
-                    android:id="@+id/btnSelect"
+                    android:id="@+id/btnSearch"
                     android:layout_width="wrap_content"
                     android:layout_height="48dp"
                     android:layout_marginStart="6dp"
-                    android:text="选择"
+                    android:text="搜索"
                     android:textSize="13sp"
                     app:cornerRadius="999dp" />
 

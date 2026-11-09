@@ -21,6 +21,7 @@
 
         <activity android:name=".ReadingStatsActivity" android:exported="false" />
         <activity android:name=".ReadingHistoryActivity" android:exported="false" />
+        <activity android:name=".SearchActivity" android:exported="true" />
 
         <activity
             android:name=".ReaderActivity"
