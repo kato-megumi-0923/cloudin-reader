@@ -2,7 +2,6 @@ package com.cloudin.reader
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -10,6 +9,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
+import java.util.concurrent.Future
 
 /**
  * 书架卡片，仿 OPPO 阅读：
@@ -28,15 +28,20 @@ class BookCoverView @JvmOverloads constructor(
     private var bookId: String = ""
     private var format: String = "txt"
     private var bitmap: Bitmap? = null
-    private var loadedPath: String? = null
+    private var coverPath: String? = null
+    private var loadedKey: CoverThumbnailLoader.Key? = null
+    private var pendingKey: CoverThumbnailLoader.Key? = null
+    private var request: Future<*>? = null
+    private var requestGeneration = 0
 
     /** 封面整体是否偏亮，角标据此在深/浅两套配色间切换 */
     var coverIsLight: Boolean = true
         private set
-    private var brightnessKnown = false
+    var onCoverAppearanceChanged: ((Boolean) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
-    private val radius = 14f * density
+    internal var folderPreview = false
+    private val radius get() = if (folderPreview) 0f else 14f * density
 
     private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#E8FFFFFF") }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -45,6 +50,10 @@ class BookCoverView @JvmOverloads constructor(
         color = Color.parseColor("#99FFFFFF")
     }
     private val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val imageBounds = RectF()
+    private val cardBounds = RectF()
+    private val imageClip = android.graphics.Path()
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
@@ -57,43 +66,77 @@ class BookCoverView @JvmOverloads constructor(
     }
 
     fun bind(book: Book) {
+        val changed = book.id != bookId || book.coverPath != coverPath
         title = book.title
         bookId = book.id
         format = book.format
-        if (book.coverPath != loadedPath || !brightnessKnown) {
-            loadedPath = book.coverPath
-            bitmap = book.coverPath?.let { path ->
-                runCatching {
-                    BitmapFactory.decodeFile(path)?.let { bmp ->
-                        val maxW = 800
-                        if (bmp.width > maxW) {
-                            Bitmap.createScaledBitmap(bmp, maxW, bmp.height * maxW / bmp.width, true)
-                        } else bmp
-                    }
-                }.getOrNull()
-            }
-            coverIsLight = bitmap?.let { sampleLight(it) } ?: artworkLight()
-            brightnessKnown = true
+        if (changed) {
+            cancelThumbnailRequest()
+            bitmap = null
+            loadedKey = null
+            coverPath = book.coverPath
+            updateAppearance(if (coverPath == null) artworkLight() else false)
         }
+        requestThumbnail()
         invalidate()
     }
 
-    private fun sampleLight(bmp: Bitmap): Boolean {
-        val small = Bitmap.createScaledBitmap(bmp, 12, 12, false)
-        var sum = 0.0
-        var n = 0
-        for (y in 0 until small.height) {
-            for (x in 0 until small.width) {
-                val c = small.getPixel(x, y)
-                val r = Color.red(c) / 255f
-                val g = Color.green(c) / 255f
-                val b = Color.blue(c) / 255f
-                sum += 0.2126 * r + 0.7152 * g + 0.0722 * b
-                n++
-            }
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        requestThumbnail()
+    }
+
+    override fun onDetachedFromWindow() {
+        cancelThumbnailRequest()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        cardBounds.set(0f, 0f, w.toFloat(), h.toFloat())
+        imageClip.rewind()
+        imageClip.addRoundRect(cardBounds, radius, radius, android.graphics.Path.Direction.CW)
+        requestThumbnail()
+    }
+
+    private fun requestThumbnail() {
+        val path = coverPath ?: return
+        if (!isAttachedToWindow || width <= 0 || height <= 0) return
+        val key = CoverThumbnailLoader.key(path, width, height)
+        if (key == loadedKey || key == pendingKey) return
+        cancelThumbnailRequest()
+        val cached = CoverThumbnailLoader.cached(key)
+        if (cached != null) {
+            applyThumbnail(key, cached)
+            return
         }
-        if (small !== bmp) small.recycle()
-        return n > 0 && sum / n > 0.55
+        pendingKey = key
+        val generation = requestGeneration
+        request = CoverThumbnailLoader.load(key) { result ->
+            if (generation == requestGeneration) applyThumbnail(key, result)
+        }
+    }
+
+    private fun cancelThumbnailRequest() {
+        requestGeneration++
+        request?.cancel(false)
+        request = null
+        pendingKey = null
+    }
+
+    private fun applyThumbnail(key: CoverThumbnailLoader.Key, result: CoverThumbnailLoader.Result) {
+        request = null
+        pendingKey = null
+        loadedKey = key
+        bitmap = result.bitmap
+        updateAppearance(if (result.bitmap != null) result.isLight else artworkLight())
+        invalidate()
+    }
+
+    private fun updateAppearance(isLight: Boolean) {
+        if (coverIsLight == isLight) return
+        coverIsLight = isLight
+        onCoverAppearanceChanged?.invoke(isLight)
     }
 
     private fun artworkLight(): Boolean {
@@ -108,7 +151,7 @@ class BookCoverView @JvmOverloads constructor(
         val canvas = Canvas(bmp)
         d.setBounds(0, 0, 16, 16)
         d.draw(canvas)
-        val light = sampleLight(bmp)
+        val light = CoverThumbnailLoader.sampleLight(bmp)
         bmp.recycle()
         artworkLightCache[res] = light
         return light
@@ -116,14 +159,14 @@ class BookCoverView @JvmOverloads constructor(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = (w * 1.34f).toInt()
+        val h = if (folderPreview) MeasureSpec.getSize(heightMeasureSpec) else (w * 1.34f).toInt()
         setMeasuredDimension(w, h)
     }
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        val rect = RectF(0f, 0f, w, h)
+        val rect = cardBounds
 
         val bmp0 = bitmap
         if (bmp0 == null) {
@@ -136,27 +179,25 @@ class BookCoverView @JvmOverloads constructor(
         } else {
             canvas.drawRoundRect(rect, radius, radius, cardPaint)
         }
-        canvas.drawRoundRect(rect, radius, radius, borderPaint)
+        if (!folderPreview) canvas.drawRoundRect(rect, radius, radius, borderPaint)
 
         val bmp = bitmap
         if (bmp != null) {
             canvas.save()
-            val path = android.graphics.Path().apply {
-                addRoundRect(rect, radius, radius, android.graphics.Path.Direction.CW)
-            }
-            canvas.clipPath(path)
+            if (!folderPreview) canvas.clipPath(imageClip)
             val scale = maxOf(w / bmp.width, h / bmp.height)
             val dw = bmp.width * scale
             val dh = bmp.height * scale
             val left = (w - dw) / 2f
             val top = (h - dh) / 2f
-            canvas.drawBitmap(bmp, null, RectF(left, top, left + dw, top + dh), Paint(Paint.FILTER_BITMAP_FLAG))
+            imageBounds.set(left, top, left + dw, top + dh)
+            canvas.drawBitmap(bmp, null, imageBounds, imagePaint)
             canvas.restore()
             return
         }
 
         // 渐变底 + 图库插画（按书名固定分配）
-        if (!drawArtwork(canvas, w, h)) drawGirl(canvas, w, h)
+        if ((coverPath == null || loadedKey != null) && !drawArtwork(canvas, w, h)) drawGirl(canvas, w, h)
 
         // 底部书名（1–2 行）
         val pad = w * 0.10f

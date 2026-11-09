@@ -2,6 +2,9 @@ package com.cloudin.reader
 
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Rect
 import android.net.Uri
 import android.view.View
 import android.view.inspector.WindowInspector
@@ -9,6 +12,9 @@ import android.widget.ScrollView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
+import androidx.recyclerview.widget.RecyclerView
 import com.example.liquidglass.LiquidGlassChip
 import com.example.liquidglass.LiquidGlassView
 import org.junit.Assert.*
@@ -16,10 +22,108 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /** Optional end-to-end check of the explicit fixtures imported through the system picker. */
 @RunWith(AndroidJUnit4::class)
 class DeviceSmokeTest {
+    @Test fun epubIllustrationRendersAndOpenedBookRemainsVisibleOnReturn() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = File.createTempFile("illustrated-check-", ".epub", context.cacheDir)
+        val color = Color.rgb(218, 32, 91)
+        val image = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+        val bytes = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        image.recycle()
+        val book = try {
+            ZipOutputStream(source.outputStream()).use { zip ->
+                fun add(name: String, data: ByteArray) {
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(data)
+                    zip.closeEntry()
+                }
+                add("META-INF/container.xml", """<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>""".toByteArray())
+                add("book.opf", """<package><metadata><title>${source.nameWithoutExtension}</title></metadata><manifest><item id="one" href="text/one.xhtml" media-type="application/xhtml+xml"/><item id="two" href="text/two.xhtml" media-type="application/xhtml+xml"/><item id="art" href="img/test%20image.png" media-type="image/png"/></manifest><spine><itemref idref="one"/><itemref idref="two"/></spine></package>""".toByteArray())
+                add("text/one.xhtml", """<html><body><h1>第一章</h1><p>测试正文</p><img src="../img/test%20image.png"/></body></html>""".toByteArray())
+                add("text/two.xhtml", """<html><body><svg><image xlink:href="../img/test%20image.png"/></svg></body></html>""".toByteArray())
+                add("img/test image.png", bytes)
+            }
+            (BookStore.import(context, Uri.fromFile(source), source.name) as ImportResult.Added).book
+        } finally { source.delete() }
+
+        fun onUi(block: () -> Unit) {
+            var failure: Throwable? = null
+            instrumentation.runOnMainSync { try { block() } catch (t: Throwable) { failure = t } }
+            failure?.let { throw it }
+        }
+        fun await(message: String, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 10_000
+            var ready = false
+            while (!ready && System.currentTimeMillis() < deadline) {
+                onUi { ready = condition() }
+                if (!ready) Thread.sleep(50)
+            }
+            assertTrue(message, ready)
+        }
+        fun shelfPosition(): Int = BookStore.load(context)
+            .sortedWith(compareByDescending<Book> { it.pinned }.thenByDescending { it.lastRead })
+            .indexOfFirst { it.id == book.id }
+
+        var shelf: MainActivity? = null
+        var reader: ReaderActivity? = null
+        try {
+            val doc = checkNotNull(DocumentLoader.load(book))
+            assertEquals(2, doc.images.size)
+            assertTrue(doc.images.all { doc.text[it.offset] == '\ufffc' })
+            assertEquals(doc.chapters[1].offset, doc.images[1].offset)
+            onUi {
+                context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            await("Shelf did not open") {
+                shelf = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance<MainActivity>().firstOrNull()
+                shelf != null
+            }
+            val main = checkNotNull(shelf)
+            val recycler = (main.findViewById<android.widget.FrameLayout>(R.id.container)).getChildAt(0) as RecyclerView
+            val initial = shelfPosition()
+            assertTrue(initial >= 0)
+            onUi { recycler.scrollToPosition(initial) }
+            await("EPUB card was not laid out") { recycler.findViewHolderForAdapterPosition(initial)?.itemView?.isShown == true }
+            onUi { assertTrue(recycler.findViewHolderForAdapterPosition(initial)!!.itemView.performClick()) }
+            await("Reader did not open") {
+                reader = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance<ReaderActivity>().firstOrNull()
+                reader?.findViewById<PageView>(R.id.pageView)?.pageCount()?.let { it > 0 } == true
+            }
+            val activeReader = checkNotNull(reader)
+            val page = activeReader.findViewById<PageView>(R.id.pageView)
+            val asset = doc.images.first().asset
+            val key = CoverThumbnailLoader.key(asset.path, 320, 240)
+            await("Illustration did not load") { CoverThumbnailLoader.cached(key)?.bitmap != null }
+            onUi {
+                val frame = Bitmap.createBitmap(page.width / 3, page.height / 3, Bitmap.Config.ARGB_8888)
+                try {
+                    page.draw(Canvas(frame).apply { scale(1f / 3, 1f / 3) })
+                    assertTrue((0 until frame.height step 3).any { y ->
+                        (0 until frame.width step 3).any { x -> frame.getPixel(x, y) == color }
+                    })
+                } finally { frame.recycle() }
+                activeReader.finish()
+            }
+            await("Opened EPUB was not visible when returning to the shelf") {
+                val position = shelfPosition()
+                position >= 0 && BookStore.load(context).any { it.id == book.id && it.lastRead > 0 } &&
+                    recycler.findViewHolderForAdapterPosition(position)?.itemView?.getGlobalVisibleRect(Rect()) == true
+            }
+        } finally {
+            onUi { reader?.finish(); shelf?.finish() }
+            BookStore.remove(context, book)
+        }
+    }
+
     @SdkSuppress(minSdkVersion = 29)
     @Test fun catalogFitsChaptersAndHidesReaderChrome() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -69,7 +173,7 @@ class DeviceSmokeTest {
                             assertEquals(View.GONE, activity.findViewById<View>(id).visibility)
                         }
                         val scroll = window.findViewById<View>(R.id.cardRows).parent as ScrollView
-                        val content = window.findViewById<View>(R.id.cardTitle).parent as View
+                        val content = scroll.parent as View
                         height = content.height
                         assertTrue(height in 1..(page.height * 0.66f).toInt())
                         assertEquals(chapterCount > 1, scroll.canScrollVertically(1))

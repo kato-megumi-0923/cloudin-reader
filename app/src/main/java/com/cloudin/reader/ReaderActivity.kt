@@ -121,6 +121,7 @@ class ReaderActivity : AppCompatActivity() {
                 enableDynamicBackground = true
             }
         }
+        GlassStyle.load(this).applyTo(rootView)
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -284,6 +285,7 @@ class ReaderActivity : AppCompatActivity() {
         }
         panelSection = section
         val content = layoutInflater.inflate(R.layout.sheet_reader_settings, settingsPanel, false)
+        GlassStyle.load(this).applyTo(content)
         settingsPanel.removeAllViews()
         settingsPanel.addView(content)
         settingsPanel.visibility = View.VISIBLE
@@ -481,6 +483,7 @@ class ReaderActivity : AppCompatActivity() {
         glass.cornerRadius = 26 * resources.displayMetrics.density
         glass.blurAmount = 0.18f
         glass.material = com.example.liquidglass.GlassMaterial.REGULAR
+        GlassStyle.load(this).applyTo(glass)
         glass.addView(content, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT

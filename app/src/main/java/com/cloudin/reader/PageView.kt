@@ -16,6 +16,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.Layout
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.util.AttributeSet
@@ -42,6 +44,7 @@ class PageView @JvmOverloads constructor(
     var onChapterChanged: ((String) -> Unit)? = null
 
     private var document: Document? = null
+    private var pageText: CharSequence = ""
 
     private val dp = resources.displayMetrics.density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -260,7 +263,13 @@ class PageView @JvmOverloads constructor(
         val w = (width - padH * 2).toInt()
         val h = (height - padTop - padBottom).toInt()
         if (w <= 0 || h <= 0) return
-        pages = PageBreaker.breakPages(d.text, bodyPaint, w, h, lineMultiplier)
+        pageText = if (d.images.isEmpty()) d.text else SpannableString(d.text).apply {
+            d.images.forEach { image ->
+                setSpan(ReaderImageSpan(image.asset, w, h) { invalidate() },
+                    image.offset, image.offset + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        pages = PageBreaker.breakPages(pageText, bodyPaint, w, h, lineMultiplier)
         layoutCache.evictAll()
         if (pages.isEmpty()) return
         val target = pendingOffset.coerceIn(0, d.text.length)
@@ -543,7 +552,7 @@ class PageView @JvmOverloads constructor(
     private fun drawPage(canvas: Canvas, index: Int, dx: Float, alpha: Float, opaque: Boolean = true) {
         val d = document ?: return
         val range = pages.getOrNull(index) ?: return
-        val layout = layoutFor(index, range, d) ?: return
+        val layout = layoutFor(index, range) ?: return
         val a = (alpha.coerceIn(0f, 1f) * 255).toInt()
 
         if (opaque) {
@@ -570,14 +579,13 @@ class PageView @JvmOverloads constructor(
     }
 
     @SuppressLint("WrongConstant")
-    private fun layoutFor(index: Int, range: IntRange, d: Document): StaticLayout? {
+    private fun layoutFor(index: Int, range: IntRange): StaticLayout? {
         layoutCache.get(index)?.let { return it }
-        val text = d.text
-        if (range.first >= text.length) return null
-        val pageText = text.substring(range.first, (range.last + 1).coerceAtMost(text.length))
-        if (pageText.isEmpty()) return null
+        if (range.first >= pageText.length) return null
+        val content = pageText.subSequence(range.first, (range.last + 1).coerceAtMost(pageText.length))
+        if (content.isEmpty()) return null
         val layout = StaticLayout.Builder
-            .obtain(pageText, 0, pageText.length, bodyPaint, (width - padH * 2).toInt())
+            .obtain(content, 0, content.length, bodyPaint, (width - padH * 2).toInt())
             .setLineSpacing(0f, lineMultiplier)
             .setIncludePad(false)
             .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)

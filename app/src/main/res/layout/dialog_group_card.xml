@@ -5,17 +5,34 @@
     android:background="@drawable/bg_glass_dialog"
     android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/cardTitle"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:paddingTop="22dp"
-        android:paddingBottom="14dp"
-        android:text="书籍分组"
-        android:textColor="#222222"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:id="@+id/cardTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:paddingTop="22dp"
+            android:paddingBottom="14dp"
+            android:text="书籍分组"
+            android:textColor="#222222"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <com.example.liquidglass.LiquidGlassButton
+            android:id="@+id/cardBack"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="start|center_vertical"
+            android:layout_marginStart="12dp"
+            android:contentDescription="@string/settings_back"
+            android:text="&#8249;"
+            android:textColor="#222222"
+            android:textSize="26sp"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <EditText
         android:id="@+id/cardInput"

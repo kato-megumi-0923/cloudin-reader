@@ -19,8 +19,9 @@ class BookshelfAdapter(
     private val onFolderLongClick: (BookGroup) -> Unit
 ) : RecyclerView.Adapter<BookshelfAdapter.Holder>() {
 
-    /** 第一项为文件夹；null 表示「新建分组」占位卡片。 */
-    private val folders = mutableListOf<Pair<BookGroup?, Int>>()
+    data class Folder(val group: BookGroup?, val preview: List<Book>)
+
+    private val folders = mutableListOf<Folder>()
     private val items = mutableListOf<Book>()
     private val selected = mutableSetOf<String>()
     var selecting = false
@@ -28,7 +29,7 @@ class BookshelfAdapter(
 
     var onSelectionChanged: ((Int) -> Unit)? = null
 
-    fun submit(folderList: List<Pair<BookGroup?, Int>>, list: List<Book>) {
+    fun submit(folderList: List<Folder>, list: List<Book>) {
         folders.clear()
         folders.addAll(folderList)
         items.clear()
@@ -85,9 +86,23 @@ class BookshelfAdapter(
 
     private fun toggle(book: Book) {
         if (!selected.remove(book.id)) selected.add(book.id)
-        notifyItemChanged(folders.size + items.indexOf(book))
+        notifyItemChanged(folders.size + items.indexOf(book), SelectionChange)
         onSelectionChanged?.invoke(selected.size)
     }
+
+    internal fun isBookPosition(position: Int): Boolean = position - folders.size in items.indices
+
+    internal fun selectPassedBooks(positions: Collection<Int>) {
+        if (!selecting) return
+        val previousCount = selected.size
+        positions.forEach { position ->
+            val book = items.getOrNull(position - folders.size) ?: return@forEach
+            if (selected.add(book.id)) notifyItemChanged(position, SelectionChange)
+        }
+        if (previousCount != selected.size) onSelectionChanged?.invoke(selected.size)
+    }
+
+    private object SelectionChange
 
     private fun isFolder(position: Int) = position < folders.size
 
@@ -109,28 +124,32 @@ class BookshelfAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         if (isFolder(position)) {
-            val (group, count) = folders[position]
-            holder.bindFolder(group, count)
+            holder.bindFolder(folders[position])
         } else {
             holder.bindBook(items[position - folders.size])
         }
+    }
+
+    override fun onBindViewHolder(holder: Holder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty() && payloads.all { it === SelectionChange } && isBookPosition(position)) {
+            holder.bindSelection(items[position - folders.size])
+        } else onBindViewHolder(holder, position)
     }
 
     inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
         private val cover: BookCoverView? = view.findViewById(R.id.cover)
         private val folderCard: FolderCardView? = view.findViewById(R.id.folderCard)
         private val folderName: TextView? = view.findViewById(R.id.folderName)
-        private val folderCount: TextView? = view.findViewById(R.id.folderCount)
         private val title: TextView? = view.findViewById(R.id.title)
         private val progress: TextView? = view.findViewById(R.id.progress)
         private val check: TextView? = view.findViewById(R.id.check)
         private val heart: ImageView? = view.findViewById(R.id.heart)
         private val pinBadge: ImageView? = view.findViewById(R.id.pinBadge)
 
-        fun bindFolder(group: BookGroup?, count: Int) {
-            folderCard?.bind(group, count)
+        fun bindFolder(folder: Folder) {
+            val group = folder.group
+            folderCard?.bind(folder.preview, isAdd = group == null)
             folderName?.text = group?.name ?: "新建分组"
-            folderCount?.text = if (group == null) "" else "$count 本"
             itemView.setOnClickListener { onFolderClick(group) }
             itemView.setOnLongClickListener {
                 group?.let { onFolderLongClick(it) }
@@ -139,6 +158,7 @@ class BookshelfAdapter(
         }
 
         fun bindBook(book: Book) {
+            cover?.onCoverAppearanceChanged = null
             cover?.bind(book)
             title?.text = book.title
             val percent = (book.progress * 100).toInt()
@@ -148,31 +168,21 @@ class BookshelfAdapter(
                 else -> "已读 $percent%"
             }
 
-            check?.visibility = if (selecting) View.VISIBLE else View.GONE
-            val isSelected = selecting && selected.contains(book.id)
-            check?.background = itemView.context.getDrawable(
-                if (isSelected) R.drawable.bg_check_on else R.drawable.bg_check_off
-            )
-            check?.setTextColor(if (isSelected) Color.WHITE else Color.TRANSPARENT)
+            bindSelection(book)
 
-            val lightCover = cover?.coverIsLight ?: true
             pinBadge?.visibility = if (book.pinned) View.VISIBLE else View.GONE
-            pinBadge?.setImageResource(
-                if (lightCover) R.drawable.ic_pin_badge_dark else R.drawable.ic_pin_badge_light
-            )
-            heart?.let { h ->
-                h.setImageResource(
-                    if (book.favorite) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline
-                )
-                h.setColorFilter(
-                    when {
-                        book.favorite -> Color.parseColor("#FF4D5E")
-                        lightCover -> Color.parseColor("#3A3D45")
-                        else -> Color.parseColor("#FFFFFF")
-                    }
-                )
-                h.setOnClickListener { onFavorite(book) }
+            heart?.setImageResource(if (book.favorite) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline)
+            heart?.setOnClickListener { onFavorite(book) }
+            fun updateIconColors(lightCover: Boolean) {
+                pinBadge?.setImageResource(if (lightCover) R.drawable.ic_pin_badge_dark else R.drawable.ic_pin_badge_light)
+                heart?.setColorFilter(when {
+                    book.favorite -> Color.parseColor("#FF4D5E")
+                    lightCover -> Color.parseColor("#3A3D45")
+                    else -> Color.WHITE
+                })
             }
+            updateIconColors(cover?.coverIsLight ?: true)
+            cover?.onCoverAppearanceChanged = ::updateIconColors
 
             itemView.setOnClickListener {
                 if (selecting) toggle(book) else onClick(book)
@@ -181,6 +191,15 @@ class BookshelfAdapter(
                 if (selecting) toggle(book) else onLongClick(book)
                 true
             }
+        }
+
+        fun bindSelection(book: Book) {
+            check?.visibility = if (selecting) View.VISIBLE else View.GONE
+            val isSelected = selecting && book.id in selected
+            check?.background = itemView.context.getDrawable(
+                if (isSelected) R.drawable.bg_check_on else R.drawable.bg_check_off
+            )
+            check?.setTextColor(if (isSelected) Color.WHITE else Color.TRANSPARENT)
         }
     }
 }

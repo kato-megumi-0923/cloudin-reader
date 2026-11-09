@@ -14,10 +14,11 @@ import android.view.View
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentDialog
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -28,15 +29,23 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.liquidglass.LiquidGlassButton
+import com.example.liquidglass.LiquidGlassView
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
     private enum class Tab { SHELF, GROUPS, FAVORITE, PROFILE }
+
+    private enum class ShelfFormat(val key: String, val label: Int) {
+        ALL("all", R.string.shelf_format_all),
+        TXT("txt", R.string.shelf_format_txt),
+        EPUB("epub", R.string.shelf_format_epub)
+    }
 
     private lateinit var recycler: RecyclerView
     private lateinit var empty: TextView
@@ -47,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var selectionActions: View
     private lateinit var actions: View
     private lateinit var btnMode: LiquidGlassButton
+    private lateinit var btnFormat: LiquidGlassButton
     private lateinit var bottomBarView: View
     private lateinit var profilePage: View
 
@@ -54,8 +64,10 @@ class MainActivity : AppCompatActivity() {
     private val groups = mutableListOf<BookGroup>()
     private var importing = false
     private var layoutMode = ShelfLayout.GRID
+    private var shelfFormat = ShelfFormat.ALL
     private var currentTab = Tab.SHELF
     private var currentGroup: BookGroup? = null
+    private var openedBookId: String? = null
     private var bottomInset = 0
 
     private val filePicker = registerForActivityResult(
@@ -73,6 +85,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        openedBookId = savedInstanceState?.getString("opened_book_id")
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -106,10 +119,13 @@ class MainActivity : AppCompatActivity() {
         actionSheet = findViewById(R.id.actionSheet)
         selectionActions = findViewById(R.id.selectionActions)
         btnMode = findViewById(R.id.btnMode)
+        btnFormat = findViewById(R.id.btnFormat)
         bottomBarView = findViewById(R.id.bottomBar)
 
         layoutMode = if (prefs().getString("shelf_layout", "grid") == "list")
             ShelfLayout.LIST else ShelfLayout.GRID
+        val savedFormat = prefs().getString("shelf_format", null)
+        shelfFormat = ShelfFormat.entries.firstOrNull { it.key == savedFormat } ?: ShelfFormat.ALL
 
         setupRecycler()
         recycler.edgeEffectFactory = object : androidx.recyclerview.widget.RecyclerView.EdgeEffectFactory() {
@@ -123,12 +139,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val headerBackdrop = findViewById<View>(R.id.bgLayer)
-        listOf(R.id.btnMode, R.id.btnSelect, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
+        listOf(R.id.btnMode, R.id.btnFormat, R.id.btnSelect, R.id.btnImport, R.id.btnSelectAll, R.id.btnCancelSelect)
             .forEach { id ->
                 findViewById<LiquidGlassButton>(id).apply {
                     backdropSource = headerBackdrop
                     enableDynamicBackground = true
-                    val horizontalPadding = if (id == R.id.btnMode || id == R.id.btnImport) 0 else dp(14)
+                    val horizontalPadding = when (id) {
+                        R.id.btnMode, R.id.btnImport -> 0
+                        R.id.btnFormat -> dp(10)
+                        else -> dp(14)
+                    }
                     textView.setPadding(horizontalPadding, 0, horizontalPadding, 0)
                 }
             }
@@ -156,6 +176,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.root).post { updateTabBar() }
         setupEmpty()
         setupProfile()
+        GlassStyle.load(this).applyTo(root)
 
         adapter = BookshelfAdapter(
             layoutMode,
@@ -175,9 +196,10 @@ class MainActivity : AppCompatActivity() {
         )
         adapter.onSelectionChanged = { count -> updateSelectionUi(count) }
         recycler.adapter = adapter
+        recycler.addOnItemTouchListener(ShelfDragSelection(recycler, adapter))
         applyLayoutMode()
 
-        findViewById<View>(R.id.btnImport).setOnClickListener { showAddMenu() }
+        findViewById<View>(R.id.btnImport).setOnClickListener { showAddMenu(it) }
         findViewById<View>(R.id.btnSelect).setOnClickListener { startSelecting(null) }
         findViewById<View>(R.id.btnCancelSelect).setOnClickListener { exitSelecting() }
         findViewById<View>(R.id.btnSelectAll).setOnClickListener { toggleSelectAll() }
@@ -185,6 +207,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.actPin).setOnClickListener { pinSelected() }
         findViewById<View>(R.id.actRemove).setOnClickListener { deleteSelected() }
         btnMode.setOnClickListener { toggleLayout() }
+        btnFormat.setOnClickListener { showFormatMenu() }
         btnBack.setOnClickListener { closeFolder() }
 
         recycler.post {
@@ -195,6 +218,7 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
+                    findViewById<View>(R.id.menuPanel).visibility == View.VISIBLE -> hideHeaderMenu()
                     adapter.selecting -> exitSelecting()
                     currentGroup != null -> closeFolder()
                     else -> {
@@ -209,9 +233,33 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         reload()
+        openedBookId?.let { id ->
+            val position = books.indexOfFirst { it.id == id }
+            if (position >= 0) recycler.scrollToPosition(position)
+            openedBookId = null
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("opened_book_id", openedBookId)
+        super.onSaveInstanceState(outState)
     }
 
     private fun prefs() = getSharedPreferences("shelf", MODE_PRIVATE)
+
+    private fun showFormatMenu() {
+        val items = ShelfFormat.entries.map { format ->
+            getString(format.label) to {
+                if (format != shelfFormat) {
+                    shelfFormat = format
+                    prefs().edit().putString("shelf_format", format.key).apply()
+                    reload()
+                    if (books.isNotEmpty()) recycler.scrollToPosition(0)
+                }
+            }
+        }
+        showHeaderMenu(btnFormat, items, selectedIndex = shelfFormat.ordinal)
+    }
 
     private fun setupRecycler() {
         val container = findViewById<FrameLayout>(R.id.container)
@@ -307,6 +355,11 @@ class MainActivity : AppCompatActivity() {
         groups.addAll(GroupStore.load(this))
         val all = BookStore.load(this)
         val profileHome = currentTab == Tab.PROFILE
+        val shelfHome = currentTab == Tab.SHELF && currentGroup == null
+        val formatLabel = getString(shelfFormat.label)
+        btnFormat.visibility = if (shelfHome) View.VISIBLE else View.GONE
+        btnFormat.text = getString(R.string.shelf_format_button, formatLabel)
+        btnFormat.contentDescription = getString(R.string.shelf_format_description, formatLabel)
         profilePage.visibility = if (profileHome) View.VISIBLE else View.GONE
         recycler.visibility = if (profileHome) View.GONE else View.VISIBLE
         actions.visibility = if (currentTab == Tab.PROFILE || adapter.selecting) View.GONE else View.VISIBLE
@@ -316,23 +369,27 @@ class MainActivity : AppCompatActivity() {
             profilePage.findViewById<TextView>(R.id.profileStatsDetail).text = readingDurationLabel()
         }
 
-        val folderList = mutableListOf<Pair<BookGroup?, Int>>()
+        val order = compareByDescending<Book> { it.pinned }.thenByDescending { it.lastRead }
+        val folderList = mutableListOf<BookshelfAdapter.Folder>()
         val visible: List<Book> = when {
             currentTab == Tab.PROFILE -> emptyList()
             currentTab == Tab.FAVORITE -> all.filter { it.favorite }
             currentGroup != null -> all.filter { it.groupId == currentGroup!!.id }
             currentTab == Tab.GROUPS -> {
                 // 分组页只显示文件夹卡片，不显示散书
-                groups.forEach { g -> folderList.add(g to all.count { it.groupId == g.id }) }
+                val members = all.groupBy { it.groupId }
+                groups.forEach { group ->
+                    val groupBooks = members[group.id].orEmpty()
+                    folderList.add(BookshelfAdapter.Folder(group, groupBooks.sortedWith(order).take(4)))
+                }
                 emptyList()
             }
+            shelfFormat != ShelfFormat.ALL -> all.filter { it.format == shelfFormat.key }
             else -> all
         }
 
         books.clear()
-        books.addAll(visible.sortedWith(
-            compareByDescending<Book> { it.pinned }.thenByDescending { it.lastRead }
-        ))
+        books.addAll(visible.sortedWith(order))
         adapter.submit(folderList, books)
 
         when {
@@ -350,7 +407,11 @@ class MainActivity : AppCompatActivity() {
                 empty.visibility = View.VISIBLE
             }
             books.isEmpty() && folderList.isEmpty() -> {
-                empty.text = getString(R.string.empty_shelf)
+                empty.text = if (shelfHome && shelfFormat != ShelfFormat.ALL) {
+                    getString(R.string.empty_shelf_format, formatLabel)
+                } else {
+                    getString(R.string.empty_shelf)
+                }
                 empty.visibility = View.VISIBLE
             }
             else -> empty.visibility = View.GONE
@@ -410,28 +471,112 @@ class MainActivity : AppCompatActivity() {
         else getString(R.string.profile_duration_minutes, minutes)
     }
 
+    private data class ProfileSetting(
+        val title: String,
+        val choices: List<String>,
+        val selected: () -> Int,
+        val apply: (Int) -> Unit
+    )
+
     private fun showProfileSettings() {
-        val items = arrayOf("阅读背景", "翻页方式", "书架布局")
-        AlertDialog.Builder(this).setTitle(R.string.profile_settings).setItems(items) { _, index ->
-            when (index) {
-                0 -> showProfileChoice(items[index], arrayOf("纸张", "白色", "夜间", "护眼绿"), ReaderPrefs.theme(this)) {
-                    ReaderPrefs.setTheme(this, it)
+        val dialog = ComponentDialog(this)
+        val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
+        val cardTitle = content.findViewById<TextView>(R.id.cardTitle)
+        val rows = content.findViewById<LinearLayout>(R.id.cardRows)
+        val back = content.findViewById<LiquidGlassButton>(R.id.cardBack)
+        val backdrop = findViewById<View>(R.id.root)
+        val color = getColor(R.color.shelf_title)
+        val settings = listOf(
+            ProfileSetting("阅读背景", listOf("纸张", "白色", "夜间", "护眼绿"), { ReaderPrefs.theme(this) }) {
+                ReaderPrefs.setTheme(this, it)
+            },
+            ProfileSetting("翻页方式", listOf("无", "平移", "仿真", "淡入"), { ReaderPrefs.turnMode(this) }) {
+                ReaderPrefs.setTurnMode(this, it)
+            },
+            ProfileSetting("书架布局", listOf("网格", "列表"), { layoutMode.ordinal }) {
+                if (it != layoutMode.ordinal) toggleLayout()
+            },
+            ProfileSetting(
+                getString(R.string.profile_glass_style),
+                GlassStyle.entries.map { getString(it.label) },
+                { GlassStyle.load(this).ordinal }
+            ) {
+                val style = GlassStyle.entries[it]
+                style.save(this)
+                style.applyTo(backdrop)
+                style.applyTo(content.rootView)
+            }
+        )
+
+        content.findViewById<View>(R.id.cardCancel).visibility = View.GONE
+        content.setPadding(0, 0, 0, dp(14))
+        rows.minimumHeight = dp(56) * settings.size
+        rows.gravity = Gravity.CENTER_VERTICAL
+        back.visibility = View.VISIBLE
+        back.textView.setPadding(0, 0, 0, 0)
+        back.backdropSource = backdrop
+
+        var current: ProfileSetting? = null
+        var transitioning = false
+        lateinit var navigate: (ProfileSetting?) -> Unit
+
+        fun render(setting: ProfileSetting?) {
+            current = setting
+            cardTitle.text = setting?.title ?: getString(R.string.profile_settings)
+            rows.removeAllViews()
+            if (setting == null) {
+                settings.forEach { item ->
+                    addCardRow(content, item.title, color) { navigate(item) }
                 }
-                1 -> showProfileChoice(items[index], arrayOf("无", "平移", "仿真", "淡入"), ReaderPrefs.turnMode(this)) {
-                    ReaderPrefs.setTurnMode(this, it)
-                }
-                2 -> showProfileChoice(items[index], arrayOf("网格", "列表"), layoutMode.ordinal) {
-                    if (it != layoutMode.ordinal) toggleLayout()
+            } else {
+                var selected = setting.selected()
+                setting.choices.forEachIndexed { index, label ->
+                    addCardRow(content, label, color, selected = index == selected) { row ->
+                        if (transitioning) return@addCardRow
+                        if (index != selected) {
+                            setting.choices.getOrNull(selected)?.let { previous ->
+                                setCardRowSelection(rows.getChildAt(selected), previous, false)
+                            }
+                            setCardRowSelection(row, label, true)
+                            selected = index
+                            setting.apply(index)
+                        }
+                        row.animate().cancel()
+                        row.scaleX = 0.96f
+                        row.scaleY = 0.94f
+                        row.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
+                    }
                 }
             }
-        }.setNegativeButton(R.string.cancel, null).show()
-    }
+        }
 
-    private fun showProfileChoice(title: String, choices: Array<String>, selected: Int, apply: (Int) -> Unit) {
-        AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(choices, selected) { dialog, index ->
-            apply(index)
-            dialog.dismiss()
-        }.setNegativeButton(R.string.cancel, null).show()
+        navigate = { setting ->
+            if (!transitioning) {
+                transitioning = true
+                val end = if (rows.layoutDirection == View.LAYOUT_DIRECTION_RTL) -1 else 1
+                val offset = dp(22).toFloat() * end * if (setting == null) -1 else 1
+                rows.animate().alpha(0f).translationX(-offset).setDuration(95).withEndAction {
+                    if (dialog.isShowing) {
+                        render(setting)
+                        rows.translationX = offset
+                        rows.animate().alpha(1f).translationX(0f).setDuration(175)
+                            .withEndAction { transitioning = false }.start()
+                    }
+                }.start()
+            }
+        }
+
+        fun goBack() {
+            if (!transitioning) {
+                if (current == null) dialog.dismiss() else navigate(null)
+            }
+        }
+
+        back.setOnClickListener { goBack() }
+        dialog.onBackPressedDispatcher.addCallback(dialog) { goBack() }
+        dialog.setCanceledOnTouchOutside(true)
+        render(null)
+        showCard(dialog, content, R.style.SettingsCardAnimation)
     }
 
     private fun openFolder(group: BookGroup) {
@@ -458,16 +603,15 @@ class MainActivity : AppCompatActivity() {
             }.start()
     }
 
-    private fun showCard(dialog: Dialog, content: View) {
+    private fun showCard(dialog: Dialog, content: View, windowAnimations: Int = 0) {
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = dp(26).toFloat()
             setColor(0x8CFFFFFF.toInt())
         }
-        val glass = com.example.liquidglass.LiquidGlassView(this)
+        val glass = LiquidGlassView(this)
         glass.cornerRadius = dp(26).toFloat()
         glass.blurAmount = 0.42f
         glass.material = com.example.liquidglass.GlassMaterial.REGULAR
-
         glass.addView(
             content,
             FrameLayout.LayoutParams(
@@ -475,10 +619,11 @@ class MainActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.WRAP_CONTENT
             )
         )
+        GlassStyle.load(this).applyTo(glass)
         dialog.setContentView(glass)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setDimAmount(0f)
-        dialog.window?.setWindowAnimations(0)
+        dialog.window?.setWindowAnimations(windowAnimations)
         dialog.show()
         dialog.window?.setLayout(dp(345), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setGravity(Gravity.CENTER)
@@ -491,15 +636,22 @@ class MainActivity : AppCompatActivity() {
         label: String,
         color: Int,
         clickable: Boolean = true,
-        onClick: () -> Unit = {}
+        selected: Boolean = false,
+        onClick: (View) -> Unit = {}
     ) {
         val rows = content.findViewById<LinearLayout>(R.id.cardRows)
         val row = layoutInflater.inflate(R.layout.row_dialog_action, rows, false)
         val text = row.findViewById<TextView>(R.id.cardRowText)
-        text.text = label
+        setCardRowSelection(row, label, selected)
         text.setTextColor(color)
-        if (clickable) row.setOnClickListener { onClick() } else row.isClickable = false
+        if (clickable) row.setOnClickListener(onClick) else row.isClickable = false
         rows.addView(row)
+    }
+
+    private fun setCardRowSelection(row: View, label: String, selected: Boolean) {
+        row.isSelected = selected
+        row.findViewById<TextView>(R.id.cardRowText).text =
+            if (selected) getString(R.string.checked_choice_label, label) else label
     }
 
     private fun showGlassChoices(
@@ -516,8 +668,8 @@ class MainActivity : AppCompatActivity() {
             m.text = message
             m.visibility = View.VISIBLE
         }
-        actions.forEachIndexed { index, pair ->
-            addCardRow(content, pair.first, pair.second) {
+        actions.forEachIndexed { index, (label, color) ->
+            addCardRow(content, label, color) {
                 dialog.dismiss()
                 onPick(index)
             }
@@ -655,25 +807,7 @@ class MainActivity : AppCompatActivity() {
             close()
         }
 
-        content.background = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = dp(26).toFloat()
-            setColor(0x8CFFFFFF.toInt())
-        }
-        val glass = com.example.liquidglass.LiquidGlassView(this)
-        glass.cornerRadius = dp(26).toFloat()
-        glass.blurAmount = 0.42f
-        glass.material = com.example.liquidglass.GlassMaterial.REGULAR
-
-        glass.addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
-        dialog.setContentView(glass)
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.window?.setDimAmount(0f)
-        dialog.window?.setWindowAnimations(0)
-        dialog.show()
-        dialog.window?.setLayout(dp(345), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setGravity(Gravity.CENTER)
-        glass.backdropSource = findViewById(R.id.root)
-        glass.enableDynamicBackground = true
+        showCard(dialog, content)
     }
     private fun toggleFavorite(book: Book) {
         BookStore.setFavorite(this, book.id, !book.favorite)
@@ -768,38 +902,52 @@ class MainActivity : AppCompatActivity() {
         if (adapter.allSelected()) adapter.clearSelection() else adapter.selectAll()
     }
 
-    private fun showAddMenu() {
-        val scrim = findViewById<View>(R.id.menuScrim)
-        val panel = findViewById<View>(R.id.menuPanel)
-        val backdrop = findViewById<View>(R.id.bgLayer)
-        (panel as? com.example.liquidglass.LiquidGlassView)?.apply {
-            backdropSource = backdrop
-            enableDynamicBackground = true
-            cornerRadius = dp(24).toFloat()
-        }
-        val rows = findViewById<LinearLayout>(R.id.menuRows)
-        if (panel.visibility == View.VISIBLE) {
-            hideAddMenu()
-            return
-        }
-        rows.removeAllViews()
-        val items = listOf(
+    private fun showAddMenu(anchor: View) {
+        showHeaderMenu(anchor, listOf(
             "导入文件" to { filePicker.launch(arrayOf("text/plain", "application/epub+zip", "application/octet-stream")) },
             "按目录导入" to { folderPicker.launch(null) },
             "新建分组" to { addGroupDialog() },
             "清理重复书籍" to { cleanupDuplicates() }
-        )
-        items.forEachIndexed { index, pair ->
+        ))
+    }
+
+    private fun showHeaderMenu(
+        anchor: View,
+        items: List<Pair<String, () -> Unit>>,
+        selectedIndex: Int = -1
+    ) {
+        val scrim = findViewById<View>(R.id.menuScrim)
+        val panel = findViewById<LiquidGlassView>(R.id.menuPanel)
+        if (panel.visibility == View.VISIBLE) {
+            hideHeaderMenu()
+            return
+        }
+        panel.apply {
+            backdropSource = findViewById(R.id.bgLayer)
+            enableDynamicBackground = true
+            cornerRadius = dp(24).toFloat()
+        }
+        val isRtl = actions.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        panel.updateLayoutParams<FrameLayout.LayoutParams> {
+            topMargin = findViewById<View>(R.id.header).bottom + dp(6)
+            marginEnd = dp(8) + if (isRtl) anchor.left else actions.width - anchor.right
+        }
+        val rows = findViewById<LinearLayout>(R.id.menuRows)
+        rows.removeAllViews()
+        items.forEachIndexed { index, (label, action) ->
             val tv = TextView(this)
-            tv.text = pair.first
+            tv.isSelected = index == selectedIndex
+            tv.text = if (tv.isSelected) getString(R.string.checked_choice_label, label) else label
             tv.textSize = 13f
             tv.setTextColor(getColor(R.color.shelf_title))
             val v = dp(13)
             tv.setPadding(v, v, v, v)
             tv.isClickable = true
             tv.setOnClickListener {
-                hideAddMenu()
-                pair.second()
+                if (scrim.isEnabled) {
+                    hideHeaderMenu()
+                    action()
+                }
             }
             rows.addView(tv, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -814,6 +962,7 @@ class MainActivity : AppCompatActivity() {
                 ).apply { marginStart = dp(13); marginEnd = dp(13) })
             }
         }
+        scrim.isEnabled = true
         scrim.alpha = 0f
         scrim.visibility = View.VISIBLE
         scrim.animate().alpha(1f).setDuration(120).start()
@@ -823,8 +972,8 @@ class MainActivity : AppCompatActivity() {
         panel.scaleY = 0.80f
         panel.translationY = -dp(20).toFloat()
         panel.post {
-            if (panel.visibility != View.VISIBLE) return@post
-            panel.pivotX = panel.width.toFloat()
+            if (panel.visibility != View.VISIBLE || !scrim.isEnabled) return@post
+            panel.pivotX = if (isRtl) 0f else panel.width.toFloat()
             panel.pivotY = 0f
             panel.animate()
                 .alpha(1f)
@@ -836,13 +985,14 @@ class MainActivity : AppCompatActivity() {
                 .setUpdateListener { panel.invalidate() }
                 .start()
         }
-        scrim.setOnClickListener { hideAddMenu() }
+        scrim.setOnClickListener { hideHeaderMenu() }
     }
 
-    private fun hideAddMenu() {
+    private fun hideHeaderMenu() {
         val scrim = findViewById<View>(R.id.menuScrim)
         val panel = findViewById<View>(R.id.menuPanel)
-        if (panel.visibility != View.VISIBLE) return
+        if (panel.visibility != View.VISIBLE || !scrim.isEnabled) return
+        scrim.isEnabled = false
         scrim.animate().alpha(0f).setDuration(110).start()
         panel.animate()
             .alpha(0f)
@@ -863,6 +1013,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun open(book: Book) {
+        openedBookId = book.id
         startActivity(Intent(this, ReaderActivity::class.java).putExtra("bookId", book.id))
     }
 
@@ -900,6 +1051,7 @@ class MainActivity : AppCompatActivity() {
         importing = true
         Toast.makeText(this, "正在扫描目录…", Toast.LENGTH_SHORT).show()
         Thread {
+            val directoryName = queryDirectoryName(treeUri)
             val found = mutableListOf<Pair<Uri, String>>()
             runCatching { collectDocuments(treeUri, found, 0) }
             if (found.isEmpty()) {
@@ -930,12 +1082,17 @@ class MainActivity : AppCompatActivity() {
                     else -> failed++
                 }
             }
+            val grouped = runCatching { GroupStore.groupImportedBooks(this, directoryName, added.map { it.id }) }
+            val summary = importSummary(added.size, duplicates, failed) + grouped.fold(
+                onSuccess = { group -> group?.let { "，已归入「${it.name}」" }.orEmpty() },
+                onFailure = { "，自动分组失败，可在书架手动分组" }
+            )
             runOnUiThread {
                 importing = false
                 reload()
                 Toast.makeText(
                     this,
-                    importSummary(added.size, duplicates, failed),
+                    summary,
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -1011,6 +1168,14 @@ class MainActivity : AppCompatActivity() {
         if (parts[0] != "primary") return null
         val rel = parts[1].trim('/')
         return if (rel.isEmpty()) "/storage/emulated/0" else "/storage/emulated/0/$rel"
+    }
+
+    private fun queryDirectoryName(treeUri: Uri): String {
+        val id = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
+            ?: return "导入目录"
+        val name = queryName(DocumentsContract.buildDocumentUriUsingTree(treeUri, id))
+        return name?.takeIf { it.isNotBlank() }
+            ?: id.substringAfter(':').trimEnd('/').substringAfterLast('/').ifBlank { "导入目录" }
     }
 
     private fun scanDir(dir: File, out: MutableList<File>, depth: Int) {

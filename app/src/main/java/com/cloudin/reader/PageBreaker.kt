@@ -14,7 +14,7 @@ object PageBreaker {
     private const val CHUNK = 6000
 
     @SuppressLint("WrongConstant")
-    fun breakPages(text: String, paint: TextPaint, width: Int, height: Int, multiplier: Float = LINE_MULTIPLIER): List<IntRange> {
+    fun breakPages(text: CharSequence, paint: TextPaint, width: Int, height: Int, multiplier: Float = LINE_MULTIPLIER): List<IntRange> {
         val pages = ArrayList<IntRange>(text.length / 400 + 1)
         if (width <= 0 || height <= 0) return pages
         var start = 0
@@ -23,7 +23,7 @@ object PageBreaker {
             while (start < text.length && text[start] == '\n') start++
             if (start >= text.length) break
             val end = min(text.length, start + CHUNK)
-            val chunk = text.substring(start, end)
+            val chunk = text.subSequence(start, end)
             val layout = StaticLayout.Builder
                 .obtain(chunk, 0, chunk.length, paint, width)
                 .setLineSpacing(0f, multiplier)

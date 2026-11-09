@@ -14,6 +14,7 @@ object GroupStore {
 
     private fun file(context: Context) = File(context.filesDir, FILE_NAME)
 
+    @Synchronized
     fun load(context: Context): MutableList<BookGroup> {
         val f = file(context)
         if (!f.exists()) return mutableListOf()
@@ -36,7 +37,7 @@ object GroupStore {
         }
     }
 
-    fun save(context: Context, groups: List<BookGroup>) {
+    private fun save(context: Context, groups: List<BookGroup>) {
         val arr = JSONArray()
         groups.forEach { g ->
             arr.put(JSONObject().apply {
@@ -48,6 +49,7 @@ object GroupStore {
         file(context).writeText(arr.toString())
     }
 
+    @Synchronized
     fun add(context: Context, name: String): BookGroup {
         val group = BookGroup(
             id = UUID.randomUUID().toString().replace("-", "").take(12),
@@ -60,6 +62,24 @@ object GroupStore {
         return group
     }
 
+    @Synchronized
+    fun groupImportedBooks(context: Context, directoryName: String, bookIds: Collection<String>): BookGroup? {
+        if (bookIds.isEmpty()) return null
+        val name = directoryName.trim().ifEmpty { "导入目录" }
+        val existing = load(context).firstOrNull { it.name == name }
+        val group = existing ?: add(context, name)
+        try {
+            BookStore.setGroup(context, bookIds, group.id)
+        } catch (e: Exception) {
+            if (existing == null) runCatching {
+                save(context, load(context).filterNot { it.id == group.id })
+            }
+            throw e
+        }
+        return group
+    }
+
+    @Synchronized
     fun rename(context: Context, id: String, name: String) {
         val list = load(context)
         val idx = list.indexOfFirst { it.id == id }
@@ -69,6 +89,7 @@ object GroupStore {
         }
     }
 
+    @Synchronized
     fun remove(context: Context, id: String) {
         val list = load(context)
         list.removeAll { it.id == id }

@@ -4,6 +4,16 @@
     <string name="shelf">书架</string>
     <string name="import_book">导入</string>
     <string name="empty_shelf">书架空空的\n点击右上角导入 TXT / EPUB</string>
+    <string name="shelf_format_all">全部</string>
+    <string name="shelf_format_txt" translatable="false">TXT</string>
+    <string name="shelf_format_epub" translatable="false">EPUB</string>
+    <string name="shelf_format_button">%1$s ▾</string>
+    <string name="checked_choice_label">%1$s ✓</string>
+    <string name="profile_glass_style">玻璃样式</string>
+    <string name="glass_style_liquid">液态玻璃</string>
+    <string name="glass_style_frosted">毛玻璃</string>
+    <string name="shelf_format_description">图书格式：%1$s</string>
+    <string name="empty_shelf_format">书架里没有 %1$s 图书</string>
     <string name="delete">删除</string>
     <string name="delete_confirm">删除《%1$s》？\n导入的文件会一起删除，无法恢复。</string>
     <string name="cancel">取消</string>
@@ -13,6 +23,7 @@
     <string name="profile_stats">阅读统计</string>
     <string name="profile_about">关于云中阅读</string>
     <string name="profile_settings">设置</string>
+    <string name="settings_back">返回</string>
     <string name="profile_no_recent">还没有阅读记录</string>
     <string name="profile_duration_hours_minutes">%1$d 小时 %2$d 分钟</string>
     <string name="profile_duration_minutes">%1$d 分钟</string>

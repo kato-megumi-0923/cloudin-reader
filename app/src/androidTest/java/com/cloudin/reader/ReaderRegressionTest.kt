@@ -26,6 +26,47 @@ import java.util.zip.ZipOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class ReaderRegressionTest {
+    @Test fun importedDirectoryGroupsOnlyNewBooksAndReusesItsName() {
+        val previous = (txt("already-on-shelf") as ImportResult.Added).book
+        val first = (txt("first-from-directory") as ImportResult.Added).book
+        val second = (txt("second-from-directory") as ImportResult.Added).book
+        assertNull(GroupStore.groupImportedBooks(context, "Empty directory", emptyList()))
+        val group = checkNotNull(GroupStore.groupImportedBooks(context, "目录示例", listOf(first.id)))
+        val sameGroup = GroupStore.groupImportedBooks(context, "目录示例", listOf(second.id))
+        assertEquals(group.id, sameGroup?.id)
+        assertEquals(listOf(group), GroupStore.load(context))
+        val grouped = BookStore.load(context).associate { it.id to it.groupId }
+        assertEquals(group.id, grouped[first.id])
+        assertEquals(group.id, grouped[second.id])
+        assertNull(grouped[previous.id])
+    }
+
+    @Test fun largeCoverLoadsAsCachedThumbnailOnMainCallback() {
+        val image = File(root, "large-cover.jpg")
+        val original = Bitmap.createBitmap(2048, 3072, Bitmap.Config.ARGB_8888)
+        original.eraseColor(android.graphics.Color.WHITE)
+        image.outputStream().use { assertTrue(original.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
+        original.recycle()
+
+        val key = CoverThumbnailLoader.key(image.absolutePath, 240, 320)
+        val ready = CountDownLatch(1)
+        var result: CoverThumbnailLoader.Result? = null
+        var onMain = false
+        CoverThumbnailLoader.load(key) {
+            result = it
+            onMain = android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
+            ready.countDown()
+        }
+        assertTrue(ready.await(10, TimeUnit.SECONDS))
+        val loaded = checkNotNull(result)
+        val thumbnail = checkNotNull(loaded.bitmap)
+        assertTrue(onMain)
+        assertTrue(loaded.isLight)
+        assertEquals(512, thumbnail.height)
+        assertEquals(341, thumbnail.width)
+        assertSame(loaded, CoverThumbnailLoader.cached(key))
+    }
+
     @Test fun readingSessionSplitsAtLocalMidnightAndKeepsLegacyTotal() {
         val base = instrumentation.targetContext
         val file = "stats-test-${System.nanoTime()}"
