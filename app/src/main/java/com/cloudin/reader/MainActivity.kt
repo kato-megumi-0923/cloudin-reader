@@ -1098,14 +1098,12 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "正在扫描目录…", Toast.LENGTH_SHORT).show()
         Thread {
             val directoryName = queryDirectoryName(treeUri)
-            val found = mutableListOf<Pair<Uri, String>>()
+            val found = mutableListOf<FoundDocument>()
             runCatching { collectDocuments(treeUri, found, 0) }
             if (found.isEmpty()) {
                 val path = pathFromTreeUri(treeUri)
                 if (path != null && isAllFilesAccess()) {
-                    val files = mutableListOf<File>()
-                    runCatching { scanDir(File(path), files, 0) }
-                    files.forEach { found.add(Uri.fromFile(it) to it.name) }
+                    runCatching { scanDir(File(path), found, 0) }
                 }
             }
             if (found.isEmpty()) {
@@ -1119,20 +1117,26 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "找到 ${found.size} 本，开始导入…", Toast.LENGTH_SHORT).show()
             }
             val added = mutableListOf<Book>()
+            val dirOf = mutableMapOf<String, String>()
             var duplicates = 0
             var failed = 0
-            found.forEach { (uri, name) ->
-                when (val r = runCatching { BookStore.import(this, uri, name) }.getOrNull()) {
-                    is ImportResult.Added -> added.add(r.book)
+            found.forEach { doc ->
+                when (val r = runCatching { BookStore.import(this, doc.uri, doc.name) }.getOrNull()) {
+                    is ImportResult.Added -> {
+                        added.add(r.book)
+                        dirOf[r.book.id] = doc.dir
+                    }
                     ImportResult.Duplicate -> duplicates++
                     else -> failed++
                 }
             }
-            val grouped = runCatching { GroupStore.groupImportedBooks(this, directoryName, added.map { it.id }) }
-            val summary = importSummary(added.size, duplicates, failed) + grouped.fold(
-                onSuccess = { group -> group?.let { "，已归入「${it.name}」" }.orEmpty() },
-                onFailure = { "，自动分组失败，可在书架手动分组" }
-            )
+            val grouped = runCatching { groupByDirectory(directoryName, added, dirOf) }.getOrDefault(emptyList())
+            val summary = importSummary(added.size, duplicates, failed) + when {
+                grouped.isEmpty() -> ""
+                grouped.size == 1 -> "，已归入「${grouped.first()}」"
+                else -> "，已创建 ${grouped.size} 个分组：" + grouped.take(3).joinToString("、") +
+                    if (grouped.size > 3) " 等" else ""
+            }
             runOnUiThread {
                 importing = false
                 reload()
@@ -1143,6 +1147,28 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
         }.start()
+    }
+
+    /** 目录层级 → 分组：每层目录一本书只进它自己那一层的分组，不向下递归合并。 */
+    private fun groupByDirectory(
+        rootName: String,
+        added: List<Book>,
+        dirOf: Map<String, String>
+    ): List<String> {
+        if (added.isEmpty()) return emptyList()
+        val byDir = added.groupBy { dirOf[it.id].orEmpty() }
+        val leafCount = byDir.keys.filter { it.isNotEmpty() }
+            .groupingBy { it.substringAfterLast('/') }.eachCount()
+        val created = mutableListOf<String>()
+        byDir.forEach { (dir, books) ->
+            val leaf = if (dir.isEmpty()) rootName else dir.substringAfterLast('/')
+            // 不同上级目录下同名子目录时，用完整相对路径区分
+            val name = if (dir.isEmpty() || (leafCount[leaf] ?: 0) <= 1) leaf else dir.replace('/', '·')
+            runCatching {
+                GroupStore.groupImportedBooks(this@MainActivity, name, books.map { it.id })
+            }.getOrNull()?.let { created.add(it.name) }
+        }
+        return created
     }
 
     private fun cleanupDuplicates() {
@@ -1176,7 +1202,9 @@ class MainActivity : AppCompatActivity() {
         return sb.toString()
     }
 
-    private fun collectDocuments(treeUri: Uri, out: MutableList<Pair<Uri, String>>, depth: Int) {
+    private data class FoundDocument(val uri: Uri, val name: String, val dir: String)
+
+    private fun collectDocuments(treeUri: Uri, out: MutableList<FoundDocument>, depth: Int, dir: String = "") {
         if (depth > 8) return
         val docId = if (depth == 0) DocumentsContract.getTreeDocumentId(treeUri)
             else DocumentsContract.getDocumentId(treeUri)
@@ -1196,11 +1224,12 @@ class MainActivity : AppCompatActivity() {
                 val mime = c.getString(2)
                 val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    collectDocuments(childUri, out, depth + 1)
+                    val childDir = if (dir.isEmpty()) name else "$dir/$name"
+                    collectDocuments(childUri, out, depth + 1, childDir)
                 } else {
                     val lower = name.lowercase()
                     if (lower.endsWith(".txt") || lower.endsWith(".epub")) {
-                        out.add(childUri to name)
+                        out.add(FoundDocument(childUri, name, dir))
                     }
                 }
             }
@@ -1224,15 +1253,18 @@ class MainActivity : AppCompatActivity() {
             ?: id.substringAfter(':').trimEnd('/').substringAfterLast('/').ifBlank { "导入目录" }
     }
 
-    private fun scanDir(dir: File, out: MutableList<File>, depth: Int) {
+    private fun scanDir(dir: File, out: MutableList<FoundDocument>, depth: Int, rel: String = "") {
         if (depth > 8) return
         val children = runCatching { dir.listFiles() }.getOrNull() ?: return
         for (f in children) {
             if (f.isDirectory) {
-                scanDir(f, out, depth + 1)
+                val childRel = if (rel.isEmpty()) f.name else "$rel/${f.name}"
+                scanDir(f, out, depth + 1, childRel)
             } else {
                 val lower = f.name.lowercase()
-                if (lower.endsWith(".txt") || lower.endsWith(".epub")) out.add(f)
+                if (lower.endsWith(".txt") || lower.endsWith(".epub")) {
+                    out.add(FoundDocument(Uri.fromFile(f), f.name, rel))
+                }
             }
         }
     }
