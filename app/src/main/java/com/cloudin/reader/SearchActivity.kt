@@ -139,7 +139,7 @@ class SearchActivity : AppCompatActivity() {
             visibility = View.GONE
         }
         list = RecyclerView(this).apply {
-            layoutManager = GridLayoutManager(this@SearchActivity, 3)
+            layoutManager = GridLayoutManager(this@SearchActivity, gridSpanCount())
             adapter = this@SearchActivity.adapter
             clipToPadding = false
             setPadding(dp(10), dp(4), dp(10), dp(16))
@@ -297,6 +297,12 @@ class SearchActivity : AppCompatActivity() {
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radius).toFloat()
+    }
+
+    /** 与书架同一套列数算法：按屏幕宽度算，平板 8 列、手机 4 列。 */
+    private fun gridSpanCount(): Int {
+        val widthDp = resources.configuration.screenWidthDp
+        return (widthDp / 114).coerceIn(4, 12)
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
