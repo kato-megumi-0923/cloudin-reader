@@ -30,6 +30,11 @@ class BookCoverView @JvmOverloads constructor(
     private var bitmap: Bitmap? = null
     private var loadedPath: String? = null
 
+    /** 封面整体是否偏亮，角标据此在深/浅两套配色间切换 */
+    var coverIsLight: Boolean = true
+        private set
+    private var brightnessKnown = false
+
     private val density = resources.displayMetrics.density
     private val radius = 14f * density
 
@@ -55,7 +60,7 @@ class BookCoverView @JvmOverloads constructor(
         title = book.title
         bookId = book.id
         format = book.format
-        if (book.coverPath != loadedPath) {
+        if (book.coverPath != loadedPath || !brightnessKnown) {
             loadedPath = book.coverPath
             bitmap = book.coverPath?.let { path ->
                 runCatching {
@@ -67,8 +72,46 @@ class BookCoverView @JvmOverloads constructor(
                     }
                 }.getOrNull()
             }
+            coverIsLight = bitmap?.let { sampleLight(it) } ?: artworkLight()
+            brightnessKnown = true
         }
         invalidate()
+    }
+
+    private fun sampleLight(bmp: Bitmap): Boolean {
+        val small = Bitmap.createScaledBitmap(bmp, 12, 12, false)
+        var sum = 0.0
+        var n = 0
+        for (y in 0 until small.height) {
+            for (x in 0 until small.width) {
+                val c = small.getPixel(x, y)
+                val r = Color.red(c) / 255f
+                val g = Color.green(c) / 255f
+                val b = Color.blue(c) / 255f
+                sum += 0.2126 * r + 0.7152 * g + 0.0722 * b
+                n++
+            }
+        }
+        if (small !== bmp) small.recycle()
+        return n > 0 && sum / n > 0.55
+    }
+
+    private fun artworkLight(): Boolean {
+        val idx = ((title.hashCode() * 31 + bookId.hashCode()) and 0x7fffffff) % 20
+        val name = String.format("cover_lib_%02d", idx + 1)
+        val res = resources.getIdentifier(name, "drawable", context.packageName)
+        if (res == 0) return false
+        artworkLightCache[res]?.let { return it }
+        val d = runCatching { androidx.core.content.ContextCompat.getDrawable(context, res) }.getOrNull()
+            ?: return false
+        val bmp = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        d.setBounds(0, 0, 16, 16)
+        d.draw(canvas)
+        val light = sampleLight(bmp)
+        bmp.recycle()
+        artworkLightCache[res] = light
+        return light
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -284,5 +327,9 @@ class BookCoverView @JvmOverloads constructor(
         }
         if (current.isNotEmpty() && result.size < maxLines) result.add(current.toString())
         return if (result.isEmpty()) listOf("") else result
+    }
+
+    private companion object {
+        val artworkLightCache = HashMap<Int, Boolean>()
     }
 }

@@ -155,13 +155,21 @@ class BookshelfAdapter(
             )
             check?.setTextColor(if (isSelected) Color.WHITE else Color.TRANSPARENT)
 
+            val lightCover = cover?.coverIsLight ?: true
             pinBadge?.visibility = if (book.pinned) View.VISIBLE else View.GONE
+            pinBadge?.setImageResource(
+                if (lightCover) R.drawable.ic_pin_badge_dark else R.drawable.ic_pin_badge_light
+            )
             heart?.let { h ->
                 h.setImageResource(
                     if (book.favorite) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline
                 )
                 h.setColorFilter(
-                    if (book.favorite) Color.parseColor("#FF4D5E") else Color.parseColor("#BFBFBF")
+                    when {
+                        book.favorite -> Color.parseColor("#FF4D5E")
+                        lightCover -> Color.parseColor("#3A3D45")
+                        else -> Color.parseColor("#FFFFFF")
+                    }
                 )
                 h.setOnClickListener { onFavorite(book) }
             }

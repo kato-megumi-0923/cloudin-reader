@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 只要中间部分：顶部横条 + 向上箭头，深色描边保证在浅封面上可读 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M5.0,4.7h14a0.9,0.9 0 0 1 0,1.8h-14a0.9,0.9 0 0 1 0,-1.8z"
+        android:strokeColor="#7A000000"
+        android:strokeWidth="0.95"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,7.4l6.4,6.2h-4.4v4.8a2.0,2.0 0 0 1 -4.0,0v-4.8h-4.4z"
+        android:strokeColor="#7A000000"
+        android:strokeWidth="0.95"
+        android:strokeLineJoin="round" />
+</vector>
