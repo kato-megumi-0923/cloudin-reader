@@ -25,7 +25,6 @@ class BookCoverView @JvmOverloads constructor(
 
     private var title: String = ""
     private var bookId: String = ""
-    private var format: String = "txt"
     private var bitmap: Bitmap? = null
     private var coverPath: String? = null
     private var loadedKey: CoverThumbnailLoader.Key? = null
@@ -48,27 +47,22 @@ class BookCoverView @JvmOverloads constructor(
         strokeWidth = 1f * density
         color = Color.parseColor("#99FFFFFF")
     }
-    private val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val imageBounds = RectF()
-    private val cardBounds = RectF()
-    private val imageClip = android.graphics.Path()
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
         textAlign = Paint.Align.CENTER
     }
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#B3FFFFFF")
-        typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
-        textAlign = Paint.Align.CENTER
-    }
+    private val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val imageBounds = RectF()
+    private val cardBounds = RectF()
+    private val imageClip = android.graphics.Path()
+
 
     fun bind(book: Book) {
         val changed = book.id != bookId || book.coverPath != coverPath
         title = book.title
         bookId = book.id
-        format = book.format
         if (changed) {
             cancelThumbnailRequest()
             bitmap = null
@@ -197,25 +191,21 @@ class BookCoverView @JvmOverloads constructor(
 
         // 渐变底 + 图库插画（按书名固定分配）
         if ((coverPath == null || loadedKey != null) && !drawArtwork(canvas, w, h)) drawGirl(canvas, w, h)
-
         // 底部书名（1–2 行）
         val pad = w * 0.10f
         val maxWidth = w - pad * 2
         textPaint.textSize = (w * 0.082f).coerceAtLeast(8f * density)
         textPaint.color = Color.WHITE
-        labelPaint.color = Color.parseColor("#CCFFFFFF")
         textPaint.setShadowLayer(w * 0.02f, 0f, w * 0.008f, 0x55000000)
-        val lines = wrap(textPaint, title, maxWidth, 2)
-        val lineHeight = textPaint.textSize * 1.28f
-        var y = h - h * 0.115f - (lines.size - 1) * lineHeight
-        lines.forEach { line ->
-            canvas.drawText(line, w / 2f, y, textPaint)
-            y += lineHeight
+        val titleLines = wrap(textPaint, title, maxWidth, 2)
+        val titleLineHeight = textPaint.textSize * 1.28f
+        var titleY = h - h * 0.075f - (titleLines.size - 1) * titleLineHeight
+        titleLines.forEach { line ->
+            canvas.drawText(line, w / 2f, titleY, textPaint)
+            titleY += titleLineHeight
         }
 
-        // 底部格式标签
-        labelPaint.textSize = (w * 0.062f).coerceAtLeast(6f * density)
-        canvas.drawText("-${format.uppercase()}-", w / 2f, h - h * 0.045f, labelPaint)
+
     }
 
     /** 没封面时按书名生成稳定的渐变色，避免整排白卡 */    private fun coverColors(): Pair<Int, Int> {
@@ -353,6 +343,8 @@ class BookCoverView @JvmOverloads constructor(
         }
         canvas.drawPath(mouth, mouthPaint)
     }
+
+
     private fun wrap(paint: Paint, text: String, maxWidth: Float, maxLines: Int): List<String> {
         val result = mutableListOf<String>()
         var current = StringBuilder()
@@ -368,7 +360,6 @@ class BookCoverView @JvmOverloads constructor(
         if (current.isNotEmpty() && result.size < maxLines) result.add(current.toString())
         return if (result.isEmpty()) listOf("") else result
     }
-
     private companion object {
         val artworkLightCache = HashMap<Int, Boolean>()
     }
