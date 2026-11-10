@@ -1,8 +1,11 @@
 package com.cloudin.reader
 
 import org.w3c.dom.Element
+import org.xml.sax.InputSource
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.io.StringReader
 import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -18,10 +21,10 @@ data class EpubInfo(
 object EpubParser {
 
     /** Unzip the epub and read its metadata. Returns null when the file is not a valid EPUB. */
-    fun parse(epub: File, dir: File, coversDir: File, bookId: String): EpubInfo? {
+    fun parse(epub: File, dir: File, coversDir: File, bookId: String, maxExpandedBytes: Long): EpubInfo? {
         return try {
             dir.mkdirs()
-            unzip(epub, dir)
+            unzip(epub, dir, maxExpandedBytes)
             readInfo(dir, coversDir, bookId)
         } catch (e: Exception) {
             null
@@ -32,11 +35,9 @@ object EpubParser {
         val container = File(dir, "META-INF/container.xml")
         if (!container.exists()) return null
         val rootPath = parseContainer(container) ?: return null
-        val opf = File(dir, rootPath)
+        val opf = resolveInside(dir, dir, rootPath) ?: return null
         if (!opf.exists()) return null
-        val doc = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-        }.newDocumentBuilder().parse(opf)
+        val doc = readXml(opf)
         val opfDir = opf.parentFile ?: dir
 
         fun firstText(vararg tagNames: String): String {
@@ -91,16 +92,16 @@ object EpubParser {
             val idref = e.getAttribute("idref")
             val item = items[idref] ?: continue
             if (item.mediaType != null && !item.mediaType.contains("html")) continue
-            val f = File(opfDir, item.href)
-            if (!f.exists()) continue
+            val f = resolveInside(dir, opfDir, item.href) ?: continue
+            if (!f.isFile) continue
             chapters.add(EpubChapter("第${chapters.size + 1}章", f))
         }
         if (chapters.isEmpty()) return null
 
         var coverPath: String? = null
         if (coverHref != null && coversDir != null && bookId != null) {
-            val src = File(opfDir, coverHref!!)
-            if (src.exists()) {
+            val src = resolveInside(dir, opfDir, coverHref)
+            if (src?.isFile == true) {
                 val ext = src.extension.ifEmpty { "jpg" }
                 val dst = File(coversDir, "$bookId.$ext")
                 runCatching { src.copyTo(dst, overwrite = true); coverPath = dst.absolutePath }
@@ -117,9 +118,7 @@ object EpubParser {
 
     private fun parseContainer(container: File): String? {
         return try {
-            val doc = DocumentBuilderFactory.newInstance().apply {
-                isNamespaceAware = false
-            }.newDocumentBuilder().parse(container)
+            val doc = readXml(container)
             val nodes = doc.getElementsByTagName("rootfile")
             if (nodes.length == 0) null
             else (nodes.item(0) as Element).getAttribute("full-path")
@@ -128,9 +127,21 @@ object EpubParser {
         }
     }
 
-    private fun unzip(epub: File, dir: File) {
+    private fun readXml(file: File) = DocumentBuilderFactory.newInstance().apply {
+        isNamespaceAware = false
+    }.newDocumentBuilder().apply {
+        setEntityResolver { _, _ -> InputSource(StringReader("")) }
+    }.parse(file)
+
+    private fun resolveInside(root: File, parent: File, name: String): File? =
+        File(parent, name).canonicalFile.takeIf { it.path.startsWith(root.canonicalPath + File.separator) }
+
+    private fun unzip(epub: File, dir: File, maxExpandedBytes: Long) {
         ZipFile(epub).use { zip ->
+            if (maxExpandedBytes != Long.MAX_VALUE && zip.size() > 10_000) throw IOException("Too many EPUB entries")
             val root = dir.canonicalFile
+            val buffer = ByteArray(128 * 1024)
+            var remaining = maxExpandedBytes
             for (entry in zip.entries()) {
                 val target = File(dir, entry.name).canonicalFile
                 if (!target.path.startsWith(root.path + File.separator) && target != root) continue
@@ -139,7 +150,15 @@ object EpubParser {
                 } else {
                     target.parentFile?.mkdirs()
                     zip.getInputStream(entry).use { input ->
-                        FileOutputStream(target).use { out -> input.copyTo(out, 128 * 1024) }
+                        FileOutputStream(target).use { out ->
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                if (count > remaining) throw IOException("EPUB is too large")
+                                out.write(buffer, 0, count)
+                                remaining -= count
+                            }
+                        }
                     }
                 }
             }

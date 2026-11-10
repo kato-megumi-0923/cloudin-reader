@@ -21,7 +21,7 @@
     <string name="profile_tab">我的</string>
     <string name="profile_recent">最近阅读</string>
     <string name="profile_stats">阅读统计</string>
-    <string name="profile_about">关于云中阅读</string>
+    <string name="profile_about">关于</string>
     <string name="profile_settings">设置</string>
     <string name="settings_back">返回</string>
     <string name="profile_no_recent">还没有阅读记录</string>

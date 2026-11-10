@@ -168,7 +168,7 @@ class DeviceSmokeTest {
                 var failure: Throwable? = null
                 instrumentation.runOnMainSync {
                     try {
-                        listOf(R.id.topArea, R.id.bottomArea, R.id.progressRow, R.id.settingsPanel).forEach { id ->
+                        listOf(R.id.topArea, R.id.bottomArea, R.id.settingsPanel).forEach { id ->
                             assertEquals(View.GONE, activity.findViewById<View>(id).visibility)
                         }
                         val scroll = window.findViewById<View>(R.id.cardRows).parent as ScrollView
@@ -223,12 +223,17 @@ class DeviceSmokeTest {
                             assertTrue(button.isShown)
                             assertTrue(button.performClick())
                         }
+                        val panel = activity.findViewById<AgslGlassView>(R.id.settingsPanel)
+                        click(R.id.tabTheme)
+                        assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.sectionTheme).visibility)
                         click(R.id.tabProgress)
-                        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.progressRow).visibility)
+                        assertTrue(panel.findViewById<View>(R.id.seekBar).isShown)
+                        assertEquals(1, panel.childCount)
                         click(R.id.tabTheme)
                         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.sectionTheme).visibility)
                         click(R.id.tabFont)
                         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.sectionFont).visibility)
+                        assertEquals(1, panel.childCount)
                         click(R.id.tabTurn)
                         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.sectionTurn).visibility)
                         val chips = mapOf(

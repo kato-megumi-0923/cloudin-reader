@@ -25,14 +25,16 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 
 class ReaderActivity : AppCompatActivity() {
 
+    private enum class Panel { THEME, FONT, TURN, PROGRESS }
+
     private lateinit var book: Book
     private lateinit var pageView: PageView
     private lateinit var topArea: View
     private lateinit var bottomArea: View
     private lateinit var topBar: View
     private lateinit var settingsPanel: AgslGlassView
-    private var panelSection = -1
-    private lateinit var progressRow: View
+    private var panelSection: Panel? = null
+    private lateinit var progressControls: View
     private lateinit var loading: TextView
     private lateinit var txtTitle: TextView
     private lateinit var txtChapter: TextView
@@ -83,12 +85,12 @@ class ReaderActivity : AppCompatActivity() {
         bottomArea = findViewById(R.id.bottomArea)
         topBar = findViewById(R.id.topBar)
         settingsPanel = findViewById(R.id.settingsPanel)
-        progressRow = findViewById(R.id.progressRow)
+        progressControls = layoutInflater.inflate(R.layout.reader_progress_controls, settingsPanel, false)
         loading = findViewById(R.id.loading)
         txtTitle = findViewById(R.id.txtTitle)
         txtChapter = findViewById(R.id.txtChapter)
-        txtProgress = findViewById(R.id.txtProgress)
-        seekBar = findViewById(R.id.seekBar)
+        txtProgress = progressControls.findViewById(R.id.txtProgress)
+        seekBar = progressControls.findViewById(R.id.seekBar)
         txtTitle.text = book.title
 
         theme = ReaderPrefs.theme(this)
@@ -119,8 +121,7 @@ class ReaderActivity : AppCompatActivity() {
             R.id.topBar to 22f,
             R.id.backBar to 23f,
             R.id.bottomBar to 27f,
-            R.id.settingsPanel to 24f,
-            R.id.progressRow to 23f
+            R.id.settingsPanel to 24f
         ).forEach { (id, radiusDp) ->
             findViewById<AgslGlassView>(id).apply {
                 backdropSource = pageView
@@ -128,6 +129,7 @@ class ReaderActivity : AppCompatActivity() {
                 tintColor = ReaderPrefs.background(theme)
             }
         }
+        settingsPanel.usePopupOptics()
         GlassStyle.load(this).applyTo(rootView)
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -195,7 +197,7 @@ class ReaderActivity : AppCompatActivity() {
         txtProgress.setTextColor(soft)
         loading.setTextColor(soft)
         findViewById<View>(R.id.root).setBackgroundColor(ReaderPrefs.background(theme))
-        listOf(R.id.topBar, R.id.backBar, R.id.bottomBar, R.id.settingsPanel, R.id.progressRow).forEach { id ->
+        listOf(R.id.topBar, R.id.backBar, R.id.bottomBar, R.id.settingsPanel).forEach { id ->
             findViewById<AgslGlassView>(id).tintColor = ReaderPrefs.background(theme)
         }
         val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
@@ -210,10 +212,10 @@ class ReaderActivity : AppCompatActivity() {
     private fun setupBottomTabs() {
         val actions: List<Pair<Int, () -> Unit>> = listOf(
             R.id.tabCatalog to { showCatalog() },
-            R.id.tabProgress to { toggleProgressRow() },
-            R.id.tabTheme to { showSettings(0) },
-            R.id.tabFont to { showSettings(1) },
-            R.id.tabTurn to { showSettings(2) }
+            R.id.tabProgress to { showSettings(Panel.PROGRESS) },
+            R.id.tabTheme to { showSettings(Panel.THEME) },
+            R.id.tabFont to { showSettings(Panel.FONT) },
+            R.id.tabTurn to { showSettings(Panel.TURN) }
         )
         val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
         actions.forEach { (id, action) ->
@@ -225,42 +227,11 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    private fun toggleProgressRow() {
-        hideSettingsPanel()
-        val glass = progressRow as AgslGlassView
-        if (progressRow.visibility == View.VISIBLE) {
-            progressRow.animate()
-                .alpha(0f)
-                .translationY(dp(16).toFloat())
-                .setDuration(130)
-                .withEndAction {
-                    progressRow.visibility = View.GONE
-                    progressRow.alpha = 1f
-                    progressRow.translationY = 0f
-                }
-                .start()
-        } else {
-            glass.cornerRadius = dp(24).toFloat()
-            glass.backdropSource = pageView
-            progressRow.visibility = View.VISIBLE
-            progressRow.alpha = 0f
-            progressRow.translationY = dp(18).toFloat()
-            progressRow.animate()
-                .alpha(1f)
-                .translationY(0f)
-                .setDuration(190)
-                .setInterpolator(android.view.animation.DecelerateInterpolator(1.5f))
-                .start()
-        }
-    }
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun toggleBars() {
         barsVisible = !barsVisible
-        if (!barsVisible) {
-            progressRow.visibility = View.GONE
-            hideSettingsPanel()
-        }
+        if (!barsVisible) hideSettingsPanel()
         animateBar(topArea, barsVisible)
         animateBar(bottomArea, barsVisible)
     }
@@ -277,20 +248,19 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    private fun showSettings(section: Int) {
-        progressRow.visibility = View.GONE
-        if (panelSection == section && settingsPanel.visibility == View.VISIBLE) {
+    private fun showSettings(section: Panel) {
+        if (panelSection == section) {
             hideSettingsPanel()
             return
         }
+        settingsPanel.animate().cancel()
         panelSection = section
-        val content = layoutInflater.inflate(R.layout.sheet_reader_settings, settingsPanel, false)
+        val content = if (section == Panel.PROGRESS) progressControls
+            else layoutInflater.inflate(R.layout.sheet_reader_settings, settingsPanel, false)
         GlassStyle.load(this).applyTo(content)
         settingsPanel.removeAllViews()
         settingsPanel.addView(content)
         settingsPanel.visibility = View.VISIBLE
-        settingsPanel.cornerRadius = 24 * resources.displayMetrics.density
-        settingsPanel.backdropSource = pageView
         settingsPanel.translationY = if (settingsPanel.height > 0) settingsPanel.height.toFloat() else 420f
         settingsPanel.animate()
             .translationY(0f)
@@ -300,12 +270,13 @@ class ReaderActivity : AppCompatActivity() {
             .start()
 
 
+        if (section == Panel.PROGRESS) return
         content.findViewById<View>(R.id.sectionFont).visibility =
-            if (section == 1) View.VISIBLE else View.GONE
+            if (section == Panel.FONT) View.VISIBLE else View.GONE
         content.findViewById<View>(R.id.sectionTheme).visibility =
-            if (section == 0) View.VISIBLE else View.GONE
+            if (section == Panel.THEME) View.VISIBLE else View.GONE
         content.findViewById<View>(R.id.sectionTurn).visibility =
-            if (section == 2) View.VISIBLE else View.GONE
+            if (section == Panel.TURN) View.VISIBLE else View.GONE
 
         val sliderFont = content.findViewById<WeChatSlider>(R.id.sliderFont)
         sliderFont.applyTheme(theme)
@@ -410,8 +381,9 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun hideSettingsPanel() {
-        if (settingsPanel.visibility != View.VISIBLE) return
-        panelSection = -1
+        if (panelSection == null) return
+        panelSection = null
+        settingsPanel.animate().cancel()
         settingsPanel.animate().translationY(settingsPanel.height.toFloat()).setDuration(140)
             .withEndAction {
                 settingsPanel.visibility = View.GONE
@@ -481,9 +453,11 @@ class ReaderActivity : AppCompatActivity() {
 
         val glass = AgslGlassView(this).apply {
             useControlOptics(26f)
+            usePopupOptics()
             backdropSource = pageView
         }
         cancel.backdropSource = pageView
+        cancel.usePopupOptics()
         glass.addView(content, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
@@ -563,13 +537,13 @@ class ReaderActivity : AppCompatActivity() {
     private fun showCatalog() {
         val doc = document ?: return
         barsVisible = false
-        listOf(topArea, bottomArea, progressRow, settingsPanel).forEach { view ->
+        listOf(topArea, bottomArea, settingsPanel).forEach { view ->
             view.animate().cancel()
             view.visibility = View.GONE
             view.alpha = 1f
             view.translationY = 0f
         }
-        panelSection = -1
+        panelSection = null
         settingsPanel.removeAllViews()
         progressDialog?.dismiss()
         if (doc.chapters.isEmpty()) {
@@ -612,8 +586,7 @@ class ReaderActivity : AppCompatActivity() {
                     val dy = ev.rawY - downRawY
                     if (kotlin.math.abs(dx) > dp(48) && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.4f) {
                         // 落在栏/胶囊上时由 Activity 接管；面板（含滑杆）打开时不接管
-                        val panelOpen = settingsPanel.visibility == View.VISIBLE ||
-                            progressRow.visibility == View.VISIBLE
+                        val panelOpen = settingsPanel.visibility == View.VISIBLE
                         val onChrome = listOf(
                             R.id.topBar, R.id.backBar, R.id.bottomBar
                         ).any { id ->

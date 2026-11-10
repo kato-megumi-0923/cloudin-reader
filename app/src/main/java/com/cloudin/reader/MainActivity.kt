@@ -70,6 +70,8 @@ class MainActivity : AppCompatActivity() {
     private var currentGroup: BookGroup? = null
     private var openedBookId: String? = null
     private var bottomInset = 0
+    private var wifiTransferDialog: Dialog? = null
+    private var wifiDestination: Uri? = null
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -82,6 +84,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         if (uri != null) importFolder(uri)
+    }
+
+    private val wifiDestinationPicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) result.data?.data?.let { wifiDestination = it }
+        showWifiTransfer()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,7 +139,7 @@ class MainActivity : AppCompatActivity() {
 
         setupRecycler()
         header.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
-            if (bottom - top != oldBottom - oldTop) updateShelfHeaderLayout()
+            if (bottom - top != oldBottom - oldTop) updateHeaderLayout()
         }
         recycler.edgeEffectFactory = object : androidx.recyclerview.widget.RecyclerView.EdgeEffectFactory() {
             override fun createEdgeEffect(
@@ -217,7 +226,7 @@ class MainActivity : AppCompatActivity() {
         btnBack.setGlassClickListener { closeFolder() }
 
         recycler.post {
-            updateShelfHeaderLayout()
+            updateHeaderLayout()
             refreshBackdrop()
         }
 
@@ -245,6 +254,11 @@ class MainActivity : AppCompatActivity() {
             if (position >= 0) recycler.scrollToPosition(position)
             openedBookId = null
         }
+    }
+
+    override fun onStop() {
+        wifiTransferDialog?.dismiss()
+        super.onStop()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -277,7 +291,7 @@ class MainActivity : AppCompatActivity() {
             rv.clipToPadding = false
             rv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                    updateShelfTitle()
+                    updateHeaderTitle()
                 }
 
                 override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
@@ -290,16 +304,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun isShelfHome(): Boolean = currentTab == Tab.SHELF && currentGroup == null
 
-    private fun updateShelfHeaderLayout() {
+    private fun hasFloatingHeader(): Boolean = currentTab != Tab.PROFILE && currentGroup == null
+
+    private fun updateHeaderLayout() {
         val headerHeight = findViewById<View>(R.id.header).height
-        val shelfHome = isShelfHome()
+        val floatingHeader = hasFloatingHeader()
         val content = findViewById<View>(R.id.container)
-        val contentTop = if (shelfHome) 0 else headerHeight
+        val contentTop = if (floatingHeader) 0 else headerHeight
         if ((content.layoutParams as FrameLayout.LayoutParams).topMargin != contentTop) {
             content.updateLayoutParams<FrameLayout.LayoutParams> { topMargin = contentTop }
         }
         // Reserve space at the start of the list, but let books scroll through that space.
-        val paddingTop = dp(6) + if (shelfHome) headerHeight else 0
+        val paddingTop = dp(6) + if (floatingHeader) headerHeight else 0
         if (recycler.paddingTop != paddingTop) {
             val atStart = !recycler.canScrollVertically(-1)
             recycler.setPadding(recycler.paddingLeft, paddingTop, recycler.paddingRight, recycler.paddingBottom)
@@ -307,12 +323,12 @@ class MainActivity : AppCompatActivity() {
                 (recycler.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(0, 0)
             }
         }
-        updateShelfTitle()
+        updateHeaderTitle()
     }
 
-    private fun updateShelfTitle() {
+    private fun updateHeaderTitle() {
         val fadeDistance = dp(32).coerceAtLeast(1)
-        val offset = if (isShelfHome() && ::adapter.isInitialized && !adapter.selecting) {
+        val offset = if (hasFloatingHeader() && ::adapter.isInitialized && !adapter.selecting) {
             val manager = recycler.layoutManager as? LinearLayoutManager
             val first = manager?.findViewByPosition(0)
             when {
@@ -480,7 +496,7 @@ class MainActivity : AppCompatActivity() {
             }
             bottomBarView.visibility = View.VISIBLE
         }
-        updateShelfHeaderLayout()
+        updateHeaderLayout()
         updateTabBar()
     }
 
@@ -528,30 +544,14 @@ class MainActivity : AppCompatActivity() {
             text = getString(R.string.profile_about_details, version)
             visibility = View.VISIBLE
         }
-        addCardRow(content, getString(R.string.ok), Color.parseColor("#222222")) {
-            dialog.dismiss()
+        content.findViewById<View>(R.id.cardRows).let { rows ->
+            (rows.parent as View).visibility = View.GONE
         }
-        // 信息型卡片只保留一个确认按钮
-        content.findViewById<View>(R.id.cardCancel).visibility = View.GONE
-        val rows = content.findViewById<LinearLayout>(R.id.cardRows)
-        (rows.getChildAt(rows.childCount - 1) as? View)?.let { okRow ->
-            okRow.background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(22).toFloat()
-                setColor(0x12000000)
-            }
-            okRow.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)
-            ).apply {
-                marginStart = dp(16)
-                marginEnd = dp(16)
-                topMargin = dp(6)
-                bottomMargin = dp(16)
-            }
-            okRow.findViewById<TextView>(R.id.cardRowText)?.apply {
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-            }
+        content.findViewById<GlassActionButton>(R.id.cardCancel).apply {
+            text = getString(R.string.ok)
+            setGlassClickListener { dialog.dismiss() }
         }
-        showCard(dialog, content)
+        showCard(dialog, content, widthDp = 345)
     }
     private fun showProfileSettings() {
         val dialog = ComponentDialog(this)
@@ -589,7 +589,6 @@ class MainActivity : AppCompatActivity() {
         rows.gravity = Gravity.CENTER_VERTICAL
         back.visibility = View.VISIBLE
         back.textView.setPadding(0, 0, 0, 0)
-        back.backdropSource = backdrop
 
         var current: ProfileSetting? = null
         var transitioning = false
@@ -678,7 +677,12 @@ class MainActivity : AppCompatActivity() {
             }.start()
     }
 
-    private fun showCard(dialog: Dialog, content: View, windowAnimations: Int = R.style.SettingsCardAnimation) {
+    private fun showCard(
+        dialog: Dialog,
+        content: View,
+        windowAnimations: Int = R.style.SettingsCardAnimation,
+        widthDp: Int? = null
+    ) {
         // 背景交给 AGSL 着色器画，content 只保留很小的白色蒙版保证文字可读
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = dp(26).toFloat()
@@ -689,9 +693,8 @@ class MainActivity : AppCompatActivity() {
             blurRadius = dp(11).toFloat()
             tintColor = 0xFFFFFFFF.toInt()
             tintAlpha = 0.10f
-            refractionHeight = dp(22).toFloat()
-            refractionAmount = dp(30).toFloat()
             dispersion = 0.16f
+            usePopupOptics()
         }
         glass.addView(
             content,
@@ -705,12 +708,18 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setDimAmount(0f)
         dialog.window?.setWindowAnimations(windowAnimations)
         dialog.show()
-        dialog.window?.setLayout(dp(345), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        val width = widthDp?.let {
+            minOf(dp(it), (findViewById<View>(R.id.root).width - dp(32)).coerceAtLeast(1))
+        } ?: dp(345)
+        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setGravity(Gravity.CENTER)
         val backdrop = findViewById<View>(R.id.root)
         glass.backdropSource = backdrop
-        listOf(R.id.cardCancel, R.id.btnCancelGroup).forEach { id ->
-            content.findViewById<GlassActionButton>(id)?.backdropSource = backdrop
+        listOf(R.id.cardBack, R.id.cardCancel, R.id.btnCancelGroup).forEach { id ->
+            content.findViewById<GlassActionButton>(id)?.apply {
+                backdropSource = backdrop
+                usePopupOptics()
+            }
         }
         GlassStyle.load(this).applyTo(glass)
     }
@@ -952,7 +961,7 @@ class MainActivity : AppCompatActivity() {
         actions.visibility = View.GONE
         btnBack.visibility = View.GONE
         title.text = "已选 ${if (book == null) 0 else 1} 本"
-        updateShelfTitle()
+        updateHeaderTitle()
         empty.visibility = View.GONE
     }
 
@@ -1036,9 +1045,152 @@ class MainActivity : AppCompatActivity() {
         showHeaderMenu(anchor, listOf(
             "导入文件" to { filePicker.launch(arrayOf("text/plain", "application/epub+zip", "application/octet-stream")) },
             "按目录导入" to { folderPicker.launch(null) },
+            "局域网传书" to { showWifiTransfer() },
             "新建分组" to { addGroupDialog() },
             "清理重复书籍" to { cleanupDuplicates() }
         ))
+    }
+
+    private fun showWifiTransfer() {
+        if (wifiTransferDialog != null) return
+        val dialog = Dialog(this)
+        val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
+        val heading = content.findViewById<TextView>(R.id.cardTitle)
+        val message = content.findViewById<TextView>(R.id.cardMessage).apply { visibility = View.VISIBLE }
+        val rows = content.findViewById<LinearLayout>(R.id.cardRows)
+        val scroll = rows.parent as android.widget.ScrollView
+        val primary = content.findViewById<GlassActionButton>(R.id.cardCancel)
+        val color = getColor(R.color.shelf_title)
+        val destination = wifiDestination
+        val directoryName = destination?.let { runCatching { queryDirectoryName(it) }.getOrDefault("所选目录") }
+        var server: WifiBookTransfer? = null
+        var finished = false
+        var generation = 0
+        val receipts = ArrayDeque<WifiBookTransfer.Receipt>()
+        val counts = mutableMapOf<String, Int>()
+
+        fun summary(): String {
+            val failures = (counts["failed"] ?: 0) + (counts["import_failed"] ?: 0)
+            return "已归入分组 ${counts["added"] ?: 0} 本 · 跳过 ${counts["duplicate"] ?: 0} 本 · 失败 $failures 本"
+        }
+
+        fun chooseDirectory() {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+            destination?.let { intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, it) }
+            wifiTransferDialog = null
+            dialog.dismiss()
+            wifiDestinationPicker.launch(intent)
+        }
+
+        fun render() {
+            val active = server
+            heading.text = if (finished) "传书结果" else "局域网传书"
+            message.text = when {
+                finished -> summary()
+                active != null -> "电脑和平板接入同一局域网，在电脑浏览器打开下方地址"
+                else -> "电脑和平板可通过 Wi-Fi 或网线接入同一局域网，上传 TXT 或 EPUB"
+            }
+            rows.removeAllViews()
+            scroll.updateLayoutParams<LinearLayout.LayoutParams> { height = ViewGroup.LayoutParams.WRAP_CONTENT }
+            when {
+                finished -> {
+                    addCardRow(content, "保存到「$directoryName」 ›", color) { chooseDirectory() }
+                    receipts.forEach { receipt ->
+                        val state = when (receipt.state) {
+                            "added" -> "已保存并归入分组"
+                            "duplicate" -> "同名文件，已跳过"
+                            "import_failed" -> "已保存，导入分组失败"
+                            else -> "保存失败"
+                        }
+                        addCardRow(content, "${receipt.name} · $state", color, clickable = false)
+                    }
+                    val maxRows = (findViewById<View>(R.id.root).height * 0.42f).toInt().coerceAtLeast(dp(56))
+                    scroll.measure(
+                        View.MeasureSpec.makeMeasureSpec(dp(360), View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                    )
+                    scroll.updateLayoutParams<LinearLayout.LayoutParams> {
+                        height = minOf(scroll.measuredHeight, maxRows)
+                    }
+                }
+                active != null -> {
+                    addCardRow(content, active.address, color) {
+                        val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("局域网传书", active.address))
+                        Toast.makeText(this, "已复制地址", Toast.LENGTH_SHORT).show()
+                    }
+                    addCardRow(content, "保存到「$directoryName」", color, clickable = false)
+                    addCardRow(content, summary(), color, clickable = false)
+                }
+                else -> {
+                    val label = if (directoryName == null) "选择本地保存目录 ›" else "保存并归入「$directoryName」 ›"
+                    addCardRow(content, label, color) { chooseDirectory() }
+                }
+            }
+            primary.text = when {
+                finished -> "继续接收"
+                active != null -> "停止接收"
+                destination == null -> "选择保存目录"
+                else -> "开始接收"
+            }
+        }
+
+        fun finishSession() {
+            server?.close()
+            server = null
+            finished = true
+            render()
+        }
+
+        primary.setGlassClickListener {
+            if (server != null) {
+                finishSession()
+                return@setGlassClickListener
+            }
+            if (destination == null || directoryName == null) {
+                chooseDirectory()
+                return@setGlassClickListener
+            }
+            val session = ++generation
+            val opened = try {
+                WifiBookTransfer.open(this, destination, directoryName, onResult = { receipt ->
+                    runOnUiThread {
+                        if ((receipt.state == "added" || receipt.state == "import_failed") && !isDestroyed && !isFinishing) reload()
+                        if (dialog.isShowing && session == generation) {
+                            counts[receipt.state] = (counts[receipt.state] ?: 0) + 1
+                            if (receipts.size >= 100) receipts.removeFirst()
+                            receipts.addLast(receipt)
+                            render()
+                        }
+                    }
+                }, onFinish = {
+                    runOnUiThread {
+                        if (dialog.isShowing && session == generation && server != null) finishSession()
+                    }
+                })
+            } catch (_: Exception) {
+                Toast.makeText(this, "无法开启接收，请稍后再试", Toast.LENGTH_SHORT).show()
+                return@setGlassClickListener
+            }
+            if (opened == null) {
+                Toast.makeText(this, "请先接入局域网", Toast.LENGTH_SHORT).show()
+                return@setGlassClickListener
+            }
+            counts.clear()
+            receipts.clear()
+            finished = false
+            server = opened
+            opened.start()
+            render()
+        }
+        dialog.setOnDismissListener {
+            server?.close()
+            server = null
+            if (wifiTransferDialog === dialog) wifiTransferDialog = null
+        }
+        wifiTransferDialog = dialog
+        render()
+        showCard(dialog, content, widthDp = 360)
     }
 
     private fun showHeaderMenu(
@@ -1055,6 +1207,7 @@ class MainActivity : AppCompatActivity() {
         panel.apply {
             backdropSource = this@MainActivity.findViewById(R.id.shelfBackdrop)
             useControlOptics(24f)
+            usePopupOptics()
         }
         val isRtl = actions.layoutDirection == View.LAYOUT_DIRECTION_RTL
         panel.updateLayoutParams<FrameLayout.LayoutParams> {

@@ -41,6 +41,9 @@ open class AgslGlassView @JvmOverloads constructor(
     var dispersion: Float = 0.14f
         set(value) { field = value; needsUpdate = true; invalidate() }
 
+    private var edgeHighlight: Float = 1.1f
+        set(value) { field = value; needsUpdate = true; invalidate() }
+
     var blurRadius: Float = dp(6f)
         set(value) { field = value; blurEffect = null; needsUpdate = true; invalidate() }
 
@@ -65,6 +68,12 @@ open class AgslGlassView @JvmOverloads constructor(
         refractionAmount = dp(9f)
         blurRadius = dp(9f)
         tintAlpha = 0.24f
+    }
+
+    internal fun usePopupOptics() {
+        refractionHeight = dp(3f)
+        refractionAmount = dp(2f)
+        edgeHighlight = 0f
     }
 
     /** 背景内容源；不设置时用父容器。 */
@@ -188,7 +197,7 @@ open class AgslGlassView @JvmOverloads constructor(
             s.setFloatUniform("ld", 0.10f)
             s.setFloatUniform("dr", 0.55f)
             s.setFloatUniform("dd", 0.06f)
-            s.setFloatUniform("edgeHighlight", 1.1f)
+            s.setFloatUniform("edgeHighlight", edgeHighlight)
             s.setFloatUniform("depthEffect", 0.35f)
             s.setFloatUniform("dispersion", dispersion)
             s.setFloatUniform("edgeDispersion", 1f)

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>局域网传书 · Cloudin Reader</title>
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: #f4f1eb; color: #252920; font: 16px/1.5 system-ui, "Microsoft YaHei", sans-serif; }
+  main { max-width: 860px; margin: 5vh auto; padding: 0 22px; }
+  .card { background: #fffdf8; border: 1px solid #e4ddd2; border-radius: 24px; padding: clamp(20px, 5vw, 44px); }
+  header, .queue-heading, .file { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  header { color: #8c4827; font-weight: 700; }
+  #connection { font-size: 13px; border-radius: 999px; background: #e3eee6; color: #255b48; padding: 5px 12px; }
+  h1 { margin: 26px 0 2px; font-size: 32px; }
+  p { margin: 4px 0; color: #5c5d51; }
+  .drop { margin-top: 24px; padding: 32px 16px; border: 1px dashed #ba8e70; border-radius: 18px; text-align: center; background: #faf1e6; }
+  .drop.active { background: #f1ddcc; }
+  .drop strong { display: block; margin-bottom: 6px; }
+  .drop small { display: block; margin-bottom: 14px; color: #5c5d51; }
+  button { border: 0; border-radius: 999px; padding: 9px 18px; color: #fffdf8; background: #96502d; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .42; cursor: default; }
+  button.secondary { background: #efe7dc; color: #783e22; }
+  .queue-heading { margin-top: 27px; }
+  h2 { font-size: 18px; }
+  .file { padding: 12px 0; border-top: 1px solid #e4ddd2; }
+  .file strong { overflow-wrap: anywhere; }
+  .file .state { flex: none; text-align: right; color: #595b50; }
+  .file .remove { margin-top: 4px; padding: 3px 10px; font-size: 13px; }
+  .file small { display: block; color: #595b50; }
+  progress { width: 96px; display: block; accent-color: #96502d; }
+  .actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+  #message { min-height: 24px; margin-top: 14px; }
+</style>
+<main>
+  <section class="card">
+    <header><span>Cloudin Reader</span><span id="connection">正在连接平板</span></header>
+    <h1>上传书籍</h1>
+    <p id="destination">正在读取保存目录…</p>
+    <div class="drop" id="drop">
+      <strong>把 TXT 或 EPUB 拖到这里</strong>
+      <small>可批量选择，每个文件最多 128 MB。选好后点击「上传」。</small>
+      <input type="file" id="files" accept=".txt,.epub" multiple hidden>
+      <button type="button" id="select" disabled>选择文件</button>
+    </div>
+    <div class="queue-heading"><h2>传输队列</h2><span id="count">0 本书</span></div>
+    <div id="queue"></div>
+    <div class="actions">
+      <button type="button" id="retry" class="secondary" hidden>重新排队失败项</button>
+      <button type="button" id="finish" class="secondary" disabled>完成本批传书</button>
+      <button type="button" id="upload" disabled>上传</button>
+    </div>
+    <p id="message" role="status"></p>
+  </section>
+</main>
+<script>
+  const el = id => document.getElementById(id);
+  const queue = [];
+  const descriptions = {
+    queued: '待上传', sending: '上传中', added: '已保存并归入分组', duplicate: '同名文件，已跳过',
+    failed: '保存失败，可重试', import_failed: '已保存，导入分组失败'
+  };
+  let connected = false;
+  let busy = false;
+  let ended = false;
+  let hasAttemptedUpload = false;
+  const canRetry = entry => entry.state === 'failed' || entry.state === 'import_failed';
+
+  function render() {
+    const hasPending = queue.some(entry => entry.state === 'queued');
+    el('count').textContent = queue.length + ' 本书';
+    el('select').disabled = !connected || ended;
+    el('upload').disabled = !connected || !hasPending || busy || ended;
+    el('retry').hidden = !queue.some(canRetry);
+    el('retry').disabled = busy || ended;
+    el('finish').disabled = !hasAttemptedUpload || hasPending || busy || ended;
+  }
+
+  function setState(entry, state) {
+    entry.state = state;
+    entry.status.textContent = descriptions[state];
+    entry.progress.hidden = state !== 'sending';
+    entry.remove.disabled = state === 'sending';
+  }
+
+  function addFiles(files) {
+    if (!connected || ended) return;
+    for (const file of files) {
+      if (!/\.(txt|epub)$/i.test(file.name) || file.size === 0 || file.size > 128 * 1024 * 1024) {
+        el('message').textContent = '已跳过格式或大小不符合要求的文件。';
+        continue;
+      }
+      const row = document.createElement('div');
+      row.className = 'file';
+      const label = document.createElement('div');
+      const name = document.createElement('strong');
+      name.textContent = file.name;
+      const size = document.createElement('small');
+      size.textContent = (file.size / 1048576).toFixed(2) + ' MB';
+      label.append(name, size);
+      const state = document.createElement('div');
+      state.className = 'state';
+      const status = document.createElement('span');
+      const progress = document.createElement('progress');
+      progress.max = 100;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary remove';
+      remove.textContent = '移除';
+      remove.setAttribute('aria-label', '从传输队列移除 ' + file.name);
+      state.append(status, progress, document.createElement('br'), remove);
+      row.append(label, state);
+      el('queue').append(row);
+      const entry = { file, status, progress, remove };
+      remove.onclick = () => {
+        if (entry.state === 'sending') return;
+        queue.splice(queue.indexOf(entry), 1);
+        row.remove();
+        render();
+      };
+      setState(entry, 'queued');
+      queue.push(entry);
+    }
+    render();
+  }
+
+  function send(entry) {
+    return new Promise(resolve => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/upload');
+      xhr.setRequestHeader('X-Cloudin-Transfer', '1');
+      xhr.setRequestHeader('X-Book-Name', encodeURIComponent(entry.file.name));
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.responseType = 'json';
+      xhr.upload.onprogress = event => {
+        if (event.lengthComputable) entry.progress.value = 100 * event.loaded / event.total;
+      };
+      xhr.onload = () => {
+        const state = xhr.response && xhr.response.state;
+        resolve(xhr.status === 200 && ['added', 'duplicate', 'import_failed'].includes(state) ? state : 'failed');
+      };
+      xhr.onerror = xhr.onabort = () => resolve('failed');
+      xhr.send(entry.file);
+    });
+  }
+
+  async function processQueue() {
+    if (!connected || busy || ended) return;
+    const batch = queue.filter(entry => entry.state === 'queued');
+    if (!batch.length) return;
+    busy = true;
+    hasAttemptedUpload = true;
+    render();
+    try {
+      for (const entry of batch) {
+        if (!queue.includes(entry)) continue;
+        entry.progress.value = 0;
+        setState(entry, 'sending');
+        try { setState(entry, await send(entry)); }
+        catch (_) { setState(entry, 'failed'); }
+      }
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
+  el('select').onclick = () => el('files').click();
+  el('files').onchange = () => { addFiles(el('files').files); el('files').value = ''; };
+  el('drop').ondragover = event => { event.preventDefault(); el('drop').classList.add('active'); };
+  el('drop').ondragleave = () => el('drop').classList.remove('active');
+  el('drop').ondrop = event => {
+    event.preventDefault();
+    el('drop').classList.remove('active');
+    addFiles(event.dataTransfer.files);
+  };
+  el('upload').onclick = processQueue;
+  el('retry').onclick = () => {
+    queue.filter(canRetry).forEach(entry => setState(entry, 'queued'));
+    render();
+  };
+  el('finish').onclick = async () => {
+    ended = true;
+    render();
+    try {
+      const reply = await fetch('/finish', { method: 'POST', headers: { 'X-Cloudin-Transfer': '1' } });
+      if (!reply.ok) throw new Error();
+      el('connection').textContent = '传输结束';
+      el('message').textContent = '请在平板上查看保存结果。';
+    } catch (_) {
+      ended = false;
+      el('message').textContent = '未能通知平板，请在平板上查看接收状态。';
+      render();
+    }
+  };
+  fetch('/destination').then(reply => {
+    if (!reply.ok) throw new Error();
+    return reply.json();
+  }).then(data => {
+    el('destination').textContent = '保存到平板的「' + data.name + '」目录，并加入同名书架分组';
+    el('connection').textContent = '平板已连接';
+    connected = true;
+    render();
+  }).catch(() => {
+    el('connection').textContent = '连接已关闭';
+    el('destination').textContent = '请在平板上重新开启局域网传书。';
+  });
+</script>
+</html>

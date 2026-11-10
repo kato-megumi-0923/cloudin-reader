@@ -164,7 +164,13 @@ object BookStore {
         save(context, list)
     }
 
-    fun import(context: Context, uri: Uri, displayName: String?): ImportResult {
+    fun import(
+        context: Context,
+        uri: Uri,
+        displayName: String?,
+        maxExpandedBytes: Long = Long.MAX_VALUE,
+        onImported: ((Book) -> Unit)? = null
+    ): ImportResult {
         val name = displayName ?: "book"
         val ext = name.substringAfterLast('.', "").lowercase()
         if (ext != "txt" && ext != "epub") return ImportResult.Failed
@@ -204,7 +210,7 @@ object BookStore {
             )
         } else {
             val dir = File(booksDir(context), "${id}_epub")
-            val info = EpubParser.parse(target, dir, coversDir(context), id)
+            val info = EpubParser.parse(target, dir, coversDir(context), id, maxExpandedBytes)
             if (info == null) {
                 target.delete()
                 dir.deleteRecursively()
@@ -224,13 +230,14 @@ object BookStore {
                 hash = hash
             )
         }
-        return synchronized(this) {
+        val (result, importedBook) = synchronized(this) {
             val existing = load(context)
             existing.forEach { if (it.hash == null) it.hash = hashes[it.id] }
-            if (existing.any { it.hash == hash }) {
+            val duplicate = existing.firstOrNull { it.hash == hash }
+            if (duplicate != null) {
                 deleteFiles(context, book)
                 save(context, existing)
-                ImportResult.Duplicate
+                ImportResult.Duplicate to duplicate
             } else {
                 existing.add(book)
                 try {
@@ -239,9 +246,11 @@ object BookStore {
                     deleteFiles(context, book)
                     throw e
                 }
-                ImportResult.Added(book)
+                ImportResult.Added(book) to book
             }
         }
+        onImported?.invoke(importedBook)
+        return result
     }
 
     @Synchronized
