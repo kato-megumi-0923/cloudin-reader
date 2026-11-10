@@ -11,7 +11,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.LinearInterpolator
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import kotlin.math.sin
@@ -24,6 +23,7 @@ class GlassActionButton @JvmOverloads constructor(
 
     // Refraction and blur sample beyond the button outline.
     override val backdropPaddingPx: Int get() = dp(20)
+    private var backIcon: ImageView? = null
 
     val textView = TextView(context).apply {
         gravity = Gravity.CENTER
@@ -54,27 +54,45 @@ class GlassActionButton @JvmOverloads constructor(
 
     override fun getAccessibilityClassName(): CharSequence = android.widget.Button::class.java.name
 
+    internal fun useBackIcon(color: Int, sizeDp: Int = 20) {
+        contentDescription = context.getString(R.string.settings_back)
+        textView.visibility = View.GONE
+        val icon = backIcon ?: ImageView(context).also { image ->
+            image.setImageResource(R.drawable.ic_back)
+            image.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            val size = context.readerDp(sizeDp)
+            addView(image, LayoutParams(size, size, Gravity.CENTER))
+            backIcon = image
+        }
+        icon.setColorFilter(color)
+    }
+
+    internal fun setBackIconColor(color: Int) {
+        backIcon?.setColorFilter(color)
+    }
+
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
 
-internal fun GlassActionButton.useBackIcon(color: Int) {
-    contentDescription = context.getString(R.string.settings_back)
-    textView.visibility = View.GONE
-    addView(ImageView(context).apply {
-        setImageResource(R.drawable.ic_back)
-        setColorFilter(color)
-        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-    }, FrameLayout.LayoutParams(context.readerDp(20), context.readerDp(20), Gravity.CENTER))
+internal fun GlassActionButton.configureBackButton(
+    color: Int,
+    backdrop: View,
+    tint: Int,
+    controlRadiusDp: Float? = null,
+    iconSizeDp: Int = 20,
+    action: () -> Unit
+) {
+    useBackIcon(color, iconSizeDp)
+    if (controlRadiusDp == null) usePopupOptics() else useControlOptics(controlRadiusDp)
+    tintColor = tint
+    backdropSource = backdrop
+    frosted = GlassStyle.load(context) == GlassStyle.FROSTED
+    setGlassClickListener { action() }
 }
 
 internal fun Context.glassBackButton(color: Int, backdrop: View, tint: Int = Color.WHITE, action: () -> Unit) =
     GlassActionButton(this).apply {
-        useBackIcon(color)
-        usePopupOptics()
-        tintColor = tint
-        backdropSource = backdrop
-        frosted = GlassStyle.load(context) == GlassStyle.FROSTED
-        setGlassClickListener { action() }
+        configureBackButton(color, backdrop, tint, action = action)
     }
 
 /** The click keeps its native hit testing. Multiple actions can rebound one shared glass surface. */

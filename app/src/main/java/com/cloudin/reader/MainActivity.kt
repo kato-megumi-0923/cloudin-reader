@@ -539,7 +539,9 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun showAboutCard() {
-        val version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        val info = packageManager.getPackageInfo(packageName, 0)
+        val code = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        val version = "${info.versionName.orEmpty()} ($code)"
         val dialog = Dialog(this)
         val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
         content.findViewById<TextView>(R.id.cardTitle).text = getString(R.string.profile_about)
@@ -597,8 +599,8 @@ class MainActivity : AppCompatActivity() {
                 rows.minimumHeight = dp(56) * (settings.size + 2)
                 rows.setPadding(0, 0, 0, 0)
                 cardTitle.text = getString(R.string.profile_settings)
-                addCardRow(content, "阅读背景", color) { openProfilePage(ReadingBackgroundActivity::class.java) }
-                addCardRow(content, "翻页方式", color) { navigate(ProfileSettingsPage.TURN) }
+                addCardRow(content, getString(R.string.reader_background), color) { openProfilePage(ReadingBackgroundActivity::class.java) }
+                addCardRow(content, getString(R.string.reader_turn_mode), color) { navigate(ProfileSettingsPage.TURN) }
                 settings.forEach { (destination, item) ->
                     addCardRow(content, item.title, color) { navigate(destination) }
                 }
@@ -608,7 +610,7 @@ class MainActivity : AppCompatActivity() {
             rows.minimumHeight = 0
             rows.setPadding(dp(14), dp(4), dp(14), dp(6))
             if (page == ProfileSettingsPage.TURN) {
-                cardTitle.text = "翻页方式"
+                cardTitle.text = getString(R.string.reader_turn_mode)
                 rows.addView(readerTurnOptions(ReaderPrefs.THEME_PURE_WHITE, backdrop) {},
                     LinearLayout.LayoutParams(-1, -2))
             } else {

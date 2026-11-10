@@ -21,25 +21,25 @@ object ReaderPrefs {
     const val MODE_VERTICAL = 4
     const val MODE_SCROLL = 5
 
-    data class Theme(val id: Int, val name: String, val paper: Int, val ink: Int, val surface: Int,
+    data class Theme(val id: Int, @androidx.annotation.StringRes val nameRes: Int, val paper: Int, val ink: Int, val surface: Int,
                      val texture: Int = 0, val dark: Boolean = false)
 
     val themes = listOf(
-        Theme(THEME_PAPER, "牛皮纸", 0xFFC9B282.toInt(), 0xFF302303.toInt(), 0xFFCCB992.toInt(), R.drawable.reader_texture_kraft),
-        Theme(THEME_WHITE, "雅白", 0xFFF6F6F6.toInt(), 0xFF262626.toInt(), Color.WHITE, R.drawable.reader_texture_white),
-        Theme(THEME_NIGHT, "夜间", 0xFF1A1A1A.toInt(), 0xFFDDDDDD.toInt(), 0xFF262626.toInt(), dark = true),
-        Theme(THEME_BLACK, "雅黑", Color.BLACK, 0xFFCCCCCC.toInt(), 0xFF1A1A1A.toInt(), dark = true),
-        Theme(THEME_GREEN, "青瓷", 0xFFD2E4D2.toInt(), 0xFF132013.toInt(), 0xFFE4EFE4.toInt()),
-        Theme(THEME_WOOD, "木纹", 0xFFD2A679.toInt(), 0xFF302303.toInt(), 0xFFD5B890.toInt(), R.drawable.reader_texture_wood),
-        Theme(THEME_PLUM, "梅子", 0xFFFFE4E1.toInt(), 0xFF330500.toInt(), 0xFFFFF1F0.toInt()),
-        Theme(THEME_LINEN, "亚麻", 0xFFFAF0E6.toInt(), 0xFF302303.toInt(), 0xFFFCF7F2.toInt()),
-        Theme(THEME_PURE_WHITE, "纯白", Color.WHITE, Color.BLACK, 0xFFF6F6F6.toInt()),
-        Theme(THEME_DARK_GREEN, "墨绿", Color.BLACK, 0xFF39B991.toInt(), 0xFF01110F.toInt(), dark = true)
+        Theme(THEME_PAPER, R.string.reader_theme_paper, 0xFFC9B282.toInt(), 0xFF302303.toInt(), 0xFFCCB992.toInt(), R.drawable.reader_texture_kraft),
+        Theme(THEME_WHITE, R.string.reader_theme_white, 0xFFF6F6F6.toInt(), 0xFF262626.toInt(), Color.WHITE, R.drawable.reader_texture_white),
+        Theme(THEME_NIGHT, R.string.reader_theme_night, 0xFF1A1A1A.toInt(), 0xFFDDDDDD.toInt(), 0xFF262626.toInt(), dark = true),
+        Theme(THEME_BLACK, R.string.reader_theme_black, Color.BLACK, 0xFFCCCCCC.toInt(), 0xFF1A1A1A.toInt(), dark = true),
+        Theme(THEME_GREEN, R.string.reader_theme_green, 0xFFD2E4D2.toInt(), 0xFF132013.toInt(), 0xFFE4EFE4.toInt()),
+        Theme(THEME_WOOD, R.string.reader_theme_wood, 0xFFD2A679.toInt(), 0xFF302303.toInt(), 0xFFD5B890.toInt(), R.drawable.reader_texture_wood),
+        Theme(THEME_PLUM, R.string.reader_theme_plum, 0xFFFFE4E1.toInt(), 0xFF330500.toInt(), 0xFFFFF1F0.toInt()),
+        Theme(THEME_LINEN, R.string.reader_theme_linen, 0xFFFAF0E6.toInt(), 0xFF302303.toInt(), 0xFFFCF7F2.toInt()),
+        Theme(THEME_PURE_WHITE, R.string.reader_theme_pure_white, Color.WHITE, Color.BLACK, 0xFFF6F6F6.toInt()),
+        Theme(THEME_DARK_GREEN, R.string.reader_theme_dark_green, Color.BLACK, 0xFF39B991.toInt(), 0xFF01110F.toInt(), dark = true)
     )
 
-    val turns = listOf(MODE_NONE to "无", MODE_CURL to "仿真", MODE_SLIDE to "左右",
-        MODE_VERTICAL to "上下", MODE_SCROLL to "滚屏")
-    val fonts = listOf("serif" to "衬线", "sans-serif" to "无衬线", "monospace" to "等宽")
+    val turns = listOf(MODE_NONE to R.string.reader_turn_none, MODE_CURL to R.string.reader_turn_curl, MODE_SLIDE to R.string.reader_turn_horizontal,
+        MODE_VERTICAL to R.string.reader_turn_vertical, MODE_SCROLL to R.string.reader_turn_scroll)
+    val fonts = listOf("serif" to R.string.reader_font_serif, "sans-serif" to R.string.reader_font_sans, "monospace" to R.string.reader_font_monospace)
     fun palette(id: Int): Theme = themes.firstOrNull { it.id == id } ?: themes.first()
 
     private const val SP = "reader"

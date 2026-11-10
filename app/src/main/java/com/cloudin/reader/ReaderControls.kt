@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.RadioButton
 import android.widget.TextView
 
 internal fun Context.readerDp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
@@ -44,7 +45,7 @@ internal fun Context.readerSegments(
     val ink = ReaderPrefs.ink(theme)
     val dark = ReaderPrefs.palette(theme).dark
     val track = FrameLayout(this).apply {
-        contentDescription = label
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         background = readerPill(if (dark) 0x20FFFFFF else 0x1E473315)
         setPadding(readerDp(2), readerDp(2), readerDp(2), readerDp(2))
     }
@@ -62,7 +63,16 @@ internal fun Context.readerSegments(
     track.addView(row, FrameLayout.LayoutParams(-1, -1))
     var selected = initial.coerceIn(labels.indices)
     val buttons = labels.map { item ->
-        readerLabel(item, ink, 14f).also {
+        RadioButton(this).apply {
+            text = item
+            textSize = 14f
+            setTextColor(ink)
+            gravity = Gravity.CENTER
+            buttonDrawable = null
+            background = null
+            setPadding(0, 0, 0, 0)
+            contentDescription = context.getString(R.string.reader_option_in_group, label, item)
+        }.also {
             val size = if (vertical) LinearLayout.LayoutParams(-1, 0, 1f) else LinearLayout.LayoutParams(0, -1, 1f)
             row.addView(it, size)
         }
@@ -70,6 +80,7 @@ internal fun Context.readerSegments(
     fun sync(animate: Boolean) {
         buttons.forEachIndexed { index, button ->
             button.isSelected = index == selected
+            button.isChecked = button.isSelected
             button.setTypeface(null, if (button.isSelected) Typeface.BOLD else Typeface.NORMAL)
             button.alpha = if (button.isSelected) 1f else 0.78f
         }
@@ -109,14 +120,15 @@ internal fun Context.readerSegments(
 internal fun Context.readerTurnOptions(theme: Int, backdrop: View, onChange: () -> Unit): LinearLayout =
     LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        addView(readerSegments(listOf("单列", "双列"), if (ReaderPrefs.doubleColumns(context)) 1 else 0,
-            theme, backdrop, "阅读排版") {
+        val layouts = listOf(R.string.reader_single_column, R.string.reader_double_column).map(context::getString)
+        addView(readerSegments(layouts, if (ReaderPrefs.doubleColumns(context)) 1 else 0,
+            theme, backdrop, context.getString(R.string.reader_page_layout)) {
             ReaderPrefs.setDoubleColumns(context, it == 1)
             onChange()
         }, LinearLayout.LayoutParams(-1, readerDp(48)))
         val turns = ReaderPrefs.turns
-        addView(readerSegments(turns.map { it.second }, turns.indexOfFirst { it.first == ReaderPrefs.turnMode(context) },
-            theme, backdrop, "翻页方式") {
+        addView(readerSegments(turns.map { context.getString(it.second) }, turns.indexOfFirst { it.first == ReaderPrefs.turnMode(context) },
+            theme, backdrop, context.getString(R.string.reader_turn_mode)) {
             ReaderPrefs.setTurnMode(context, turns[it].first)
             onChange()
         }, LinearLayout.LayoutParams(-1, readerDp(48)).apply { topMargin = readerDp(10) })

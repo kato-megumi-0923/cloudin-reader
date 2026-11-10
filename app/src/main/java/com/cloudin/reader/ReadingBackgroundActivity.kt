@@ -30,13 +30,13 @@ class ReadingBackgroundActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         val heading = FrameLayout(this)
-        heading.addView(readerLabel("阅读背景", ink, 19f).apply { setTypeface(null, Typeface.BOLD) },
+        heading.addView(readerLabel(getString(R.string.reader_background), ink, 19f).apply { setTypeface(null, Typeface.BOLD) },
             FrameLayout.LayoutParams(-1, -1))
         heading.addView(glassBackButton(ink, backdrop, base) { finish() },
             FrameLayout.LayoutParams(readerDp(44), readerDp(44), Gravity.START or Gravity.CENTER_VERTICAL)
             .apply { marginStart = readerDp(14) })
         root.addView(heading, LinearLayout.LayoutParams(-1, readerDp(58)))
-        root.addView(readerLabel("系统背景", ink, 13f).apply {
+        root.addView(readerLabel(getString(R.string.reader_system_backgrounds), ink, 13f).apply {
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setPadding(readerDp(19), 0, 0, 0)
         }, LinearLayout.LayoutParams(-1, readerDp(34)))
@@ -88,7 +88,7 @@ class ReadingBackgroundActivity : AppCompatActivity() {
             }
             val preview = FrameLayout(this@ReadingBackgroundActivity)
             val image = ImageView(this@ReadingBackgroundActivity).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-            val sample = readerLabel("山间来信\n\n第一章　山路尽头\n\n　　雨到傍晚才停。她沿着山间的小路走过石桥。远处的窗亮了起来。", Color.BLACK, 12f).apply {
+            val sample = readerLabel(getString(R.string.reader_background_sample), Color.BLACK, 12f).apply {
                 typeface = Typeface.SERIF
                 gravity = Gravity.TOP or Gravity.START
                 setPadding(readerDp(9), readerDp(11), readerDp(9), readerDp(8))
@@ -116,9 +116,10 @@ class ReadingBackgroundActivity : AppCompatActivity() {
             holder.preview.setBackgroundColor(palette.paper)
             holder.image.setImageResource(palette.texture)
             holder.sample.setTextColor(palette.ink)
-            holder.name.text = palette.name
-            holder.use.text = if (selected) "全局使用中" else "使用"
-            holder.use.contentDescription = if (selected) "${palette.name}，全局使用中" else "使用${palette.name}"
+            val name = getString(palette.nameRes)
+            holder.name.text = name
+            holder.use.text = if (selected) getString(R.string.reader_theme_in_use) else getString(R.string.reader_theme_use)
+            holder.use.contentDescription = getString(if (selected) R.string.reader_theme_in_use_named else R.string.reader_theme_use_named, name)
             holder.use.setTextColor(if (selected) 0xFFB52E3A.toInt() else 0xFF211F1D.toInt())
             holder.use.background = readerPill(if (selected) Color.WHITE else 0xFFF4F3F2.toInt()).apply {
                 if (selected) setStroke(readerDp(1), 0xFFEFB9BE.toInt())

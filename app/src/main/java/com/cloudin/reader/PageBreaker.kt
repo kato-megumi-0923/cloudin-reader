@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.graphics.Paint
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import kotlin.math.min
 
 /** 把长文本按屏幕尺寸切成页。返回每页的字符区间。 */
@@ -18,27 +19,40 @@ object PageBreaker {
         val pages = ArrayList<IntRange>(text.length / 400 + 1)
         if (width <= 0 || height <= 0) return pages
         var start = 0
+        var lookahead = 1024
         while (start < text.length) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedException()
             // 跳过页首空白
             while (start < text.length && text[start] == '\n') start++
             if (start >= text.length) break
-            val end = min(text.length, start + CHUNK)
-            val chunk = text.subSequence(start, end)
-            val layout = StaticLayout.Builder
-                .obtain(chunk, 0, chunk.length, paint, width)
-                .setLineSpacing(0f, multiplier)
-                .setIncludePad(false)
-                .setBreakStrategy(android.text.Layout.BREAK_STRATEGY_HIGH_QUALITY)
-                .setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE)
-                .build()
+            val limit = min(text.length, start + CHUNK)
+            var probe = min(limit, start + lookahead)
+            var chars: Int
+            while (true) {
+                // Keep paragraphs whole so high-quality line breaking sees the same text.
+                val newline = TextUtils.indexOf(text, '\n', probe, limit)
+                val end = if (newline < 0) limit else newline + 1
+                val chunk = text.subSequence(start, end)
+                val layout = StaticLayout.Builder
+                    .obtain(chunk, 0, chunk.length, paint, width)
+                    .setLineSpacing(0f, multiplier)
+                    .setIncludePad(false)
+                    .setBreakStrategy(android.text.Layout.BREAK_STRATEGY_HIGH_QUALITY)
+                    .setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE)
+                    .build()
 
-            var lastLine = 0
-            for (i in 0 until layout.lineCount) {
-                if (layout.getLineBottom(i) <= height) lastLine = i else break
+                var lastLine = 0
+                for (i in 0 until layout.lineCount) {
+                    if (layout.getLineBottom(i) <= height) lastLine = i else break
+                }
+                chars = layout.getLineEnd(lastLine)
+                // A final empty line after a newline is not proof that the page is full.
+                if (end == limit || chars < chunk.length) break
+                probe = min(limit, end + (end - start) / 2)
             }
-            var charEnd = start + layout.getLineEnd(lastLine)
-            if (charEnd <= start) charEnd = start + 1
+            val charEnd = start + chars.coerceAtLeast(1)
             pages.add(start until charEnd)
+            lookahead = (chars + chars / 2 + 128).coerceIn(512, CHUNK)
             start = charEnd
         }
         return pages

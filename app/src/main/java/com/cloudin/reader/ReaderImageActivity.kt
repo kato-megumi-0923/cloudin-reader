@@ -37,7 +37,7 @@ class ReaderImageActivity : AppCompatActivity() {
     private lateinit var save: GlassActionButton
     private val storagePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && ::source.isInitialized) saveImage()
-        else Toast.makeText(this, "未获得保存权限", Toast.LENGTH_SHORT).show()
+        else Toast.makeText(this, R.string.reader_image_permission_denied, Toast.LENGTH_SHORT).show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,14 +55,14 @@ class ReaderImageActivity : AppCompatActivity() {
         source = file
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-        val picture = ZoomImageView(this).apply { contentDescription = "EPUB 插图" }
+        val picture = ZoomImageView(this).apply { contentDescription = getString(R.string.reader_image_description) }
         root.addView(picture, FrameLayout.LayoutParams(-1, -1))
         val buttons = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val theme = ReaderPrefs.THEME_BLACK
         buttons.addView(glassBackButton(ReaderPrefs.ink(theme), picture, ReaderPrefs.chrome(theme)) { finish() },
             LinearLayout.LayoutParams(readerDp(44), readerDp(44)))
         buttons.addView(android.view.View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        save = readerButton("保存图片", theme, picture) {
+        save = readerButton(getString(R.string.reader_image_save), theme, picture) {
             if (Build.VERSION.SDK_INT < 29 && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             } else saveImage()
@@ -89,7 +89,7 @@ class ReaderImageActivity : AppCompatActivity() {
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 if (bitmap == null) {
-                    Toast.makeText(this, "图片无法显示", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, R.string.reader_image_display_failed, Toast.LENGTH_SHORT).show()
                     finish()
                 } else {
                     picture.setImageBitmap(bitmap)
@@ -107,7 +107,8 @@ class ReaderImageActivity : AppCompatActivity() {
             val success = runCatching { saveOriginal(context, file) }.isSuccess
             runOnUiThread {
                 if (!isDestroyed) save.isEnabled = true
-                Toast.makeText(context, if (success) "原图已保存到相册" else "保存图片失败", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (success) R.string.reader_image_saved else R.string.reader_image_save_failed,
+                    Toast.LENGTH_SHORT).show()
             }
         }.start()
     }
@@ -141,9 +142,10 @@ class ReaderImageActivity : AppCompatActivity() {
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: file.extension
         val stem = file.nameWithoutExtension.take(120).ifBlank { "EPUB" }
         val name = "$stem-${System.currentTimeMillis()}.$extension"
+        val album = context.getString(R.string.app_name)
         if (Build.VERSION.SDK_INT < 29) {
             @Suppress("DEPRECATION")
-            val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Cloudin Reader")
+            val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), album)
             directory.mkdirs()
             val target = File(directory, name)
             try {
@@ -158,7 +160,7 @@ class ReaderImageActivity : AppCompatActivity() {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
             put(MediaStore.Images.Media.MIME_TYPE, mime)
-            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Cloudin Reader")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$album")
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: throw IOException("No media destination")

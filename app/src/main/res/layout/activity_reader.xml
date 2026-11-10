@@ -35,24 +35,11 @@
         android:orientation="horizontal"
         android:visibility="gone">
 
-        <com.cloudin.reader.AgslGlassView
-            xmlns:app="http://schemas.android.com/apk/res-auto"
+        <com.cloudin.reader.GlassActionButton
             android:id="@+id/backBar"
-            app:cornerRadius="999dp"
-
             app:glassMaterial="regular"
             android:layout_width="46dp"
-            android:layout_height="46dp">
-
-            <ImageButton
-                android:id="@+id/btnBack"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="返回"
-                android:padding="11dp"
-                android:src="@drawable/ic_back" />
-        </com.cloudin.reader.AgslGlassView>
+            android:layout_height="46dp" />
 
         <com.cloudin.reader.AgslGlassView
             android:id="@+id/topBar"
@@ -149,7 +136,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="目录"
+                        android:text="@string/reader_catalog"
                         android:textColor="@color/ink_soft"
                         android:textSize="11sp" />
                 </LinearLayout>
@@ -168,7 +155,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="进度"
+                        android:text="@string/reader_progress_tab"
                         android:textSize="11sp" />
                 </LinearLayout>
 
@@ -186,7 +173,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="夜间"
+                        android:text="@string/reader_theme_night"
                         android:textSize="11sp" />
                 </LinearLayout>
 
@@ -204,7 +191,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="设置"
+                        android:text="@string/profile_settings"
                         android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>

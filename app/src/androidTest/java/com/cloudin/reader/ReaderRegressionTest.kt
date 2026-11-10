@@ -130,15 +130,16 @@ class ReaderRegressionTest {
             page.onTouchEvent(event)
             event.recycle()
         }
-        val tipX = PageView::class.java.getDeclaredField("curlTipX").apply { isAccessible = true }
-        val tipY = PageView::class.java.getDeclaredField("curlTipY").apply { isAccessible = true }
+        val animator = component<TurnAnimator>(page, "turnAnimator")
+        val tipX = TurnAnimator::class.java.getDeclaredField("curlTipX").apply { isAccessible = true }
+        val tipY = TurnAnimator::class.java.getDeclaredField("curlTipY").apply { isAccessible = true }
         touch(MotionEvent.ACTION_DOWN, 765f, 70f)
         touch(MotionEvent.ACTION_MOVE, 480f, 185f)
-        assertEquals(480f, tipX.getFloat(page), 0f)
-        assertEquals(185f, tipY.getFloat(page), 0f)
+        assertEquals(480f, tipX.getFloat(animator), 0f)
+        assertEquals(185f, tipY.getFloat(animator), 0f)
         touch(MotionEvent.ACTION_MOVE, 480f, 275f)
-        assertEquals(480f, tipX.getFloat(page), 0f)
-        assertEquals(275f, tipY.getFloat(page), 0f)
+        assertEquals(480f, tipX.getFloat(animator), 0f)
+        assertEquals(275f, tipY.getFloat(animator), 0f)
         if (InstrumentationRegistry.getArguments().getString("captureCurl") == "true") {
             touch(MotionEvent.ACTION_MOVE, 395f, 220f)
             val frame = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
@@ -149,8 +150,8 @@ class ReaderRegressionTest {
             frame.recycle()
         }
         touch(MotionEvent.ACTION_MOVE, 788f, 62f)
-        assertEquals(788f, tipX.getFloat(page), 0f)
-        assertEquals(62f, tipY.getFloat(page), 0f)
+        assertEquals(788f, tipX.getFloat(animator), 0f)
+        assertEquals(62f, tipY.getFloat(animator), 0f)
         touch(MotionEvent.ACTION_UP, 788f, 62f)
         assertEquals(0, page.pageIndex())
     }
@@ -256,12 +257,55 @@ class ReaderRegressionTest {
         failure?.let { throw it }
     }
 
+    private inline fun <reified T> component(view: PageView, name: String): T =
+        PageView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(view) as T
+
     private fun view(): PageView = PageView(context).apply {
         setTheme(ReaderPrefs.THEME_WHITE)
         layout(0, 0, 800, 1000)
     }
 
     private fun longDocument() = Document("测试", (1..300).joinToString("\n") { "第 $it 行，这是用于验证分页和翻页的测试正文。" }, emptyList())
+
+    @Test fun collidingBookIdsUseSeparateCacheFilesAndMigrateLegacyRanges() {
+        val firstId = "Aa"
+        val secondId = "BB"
+        assertEquals(firstId.hashCode(), secondId.hashCode())
+        val first = PaginationCache(root, firstId)
+        val second = PaginationCache(root, secondId)
+        val document = Document("测试", "0123456789", emptyList())
+        val firstKey = first.key(document, "layout")
+        val secondKey = second.key(document, "layout")
+        val firstPages = listOf(0..4, 5..9)
+        val secondPages = listOf(0..9)
+        val directory = File(root, "reader-pagination")
+        val legacy = File(directory, "${firstId.hashCode()}.bin")
+        first.write(firstKey, firstPages)
+        assertTrue(File(directory, "book-$firstId.bin").renameTo(legacy))
+        assertNull(second.read(secondKey, document.text.length))
+        second.write(secondKey, secondPages)
+        assertEquals(firstPages, first.read(firstKey, document.text.length))
+        assertFalse(legacy.exists())
+        assertEquals(firstPages, first.read(firstKey, document.text.length))
+        assertEquals(secondPages, second.read(secondKey, document.text.length))
+    }
+
+    @Test fun scrollingWithinOneLineSkipsRepeatedProgressAndStillReportsCompletion() = onMain {
+        val view = view()
+        view.setTurnMode(ReaderPrefs.MODE_SCROLL)
+        view.setDocument(longDocument(), 0)
+        val progress = mutableListOf<Float>()
+        view.onPageChanged = { _, _, value -> progress.add(value) }
+        view.advanceScroll(0f)
+        view.advanceScroll(1f)
+        view.advanceScroll(1f)
+        assertTrue(progress.isEmpty())
+        view.advanceScroll(100_000f)
+        assertTrue(view.isAtEnd())
+        assertEquals(listOf(1f), progress)
+        view.advanceScroll(100f)
+        assertEquals(listOf(1f), progress)
+    }
 
     @Test fun lastPageAndSinglePageReachCompleteProgress() = onMain {
         val view = view()
@@ -294,8 +338,7 @@ class ReaderRegressionTest {
         event(MotionEvent.ACTION_MOVE, 50f, 150)
         event(MotionEvent.ACTION_UP, 50f, 200)
         assertEquals(1, view.pageIndex())
-        val animating = PageView::class.java.getDeclaredField("animating").apply { isAccessible = true }
-        assertFalse(animating.getBoolean(view))
+        assertFalse(component<TurnAnimator>(view, "turnAnimator").animating)
     }
 
     @Test fun bottomInsetReducesTextAreaAndKeepsReadingPosition() = onMain {
@@ -308,8 +351,7 @@ class ReaderRegressionTest {
         view.setBottomInset(250)
         assertTrue(view.pageCount() > count)
         assertTrue(view.currentOffset() <= offset)
-        val pagesField = PageView::class.java.getDeclaredField("pages").apply { isAccessible = true }
-        @Suppress("UNCHECKED_CAST") val pages = pagesField.get(view) as List<IntRange>
+        val pages = component<Paginator>(view, "paginator").pages
         assertTrue(offset in pages[view.pageIndex()])
     }
 

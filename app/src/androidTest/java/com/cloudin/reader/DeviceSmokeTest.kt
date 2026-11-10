@@ -156,6 +156,11 @@ class DeviceSmokeTest {
                 }
                 val savedBytes = context.contentResolver.openInputStream(checkNotNull(savedImage))!!.use { it.readBytes() }
                 assertArrayEquals(bytes, savedBytes)
+                val relativePath = MediaStore.Images.Media.RELATIVE_PATH
+                context.contentResolver.query(checkNotNull(savedImage), arrayOf(relativePath), null, null, null)!!.use {
+                    assertTrue(it.moveToFirst())
+                    assertEquals("Pictures/${context.getString(R.string.app_name)}/", it.getString(0))
+                }
             }
             onUi { viewer?.finish(); activeReader.finish() }
             await("Opened EPUB was not visible when returning to the shelf") {
@@ -219,6 +224,8 @@ class DeviceSmokeTest {
                             assertEquals(View.GONE, activity.findViewById<View>(id).visibility)
                         }
                         val scroll = window.findViewById<View>(R.id.cardRows).parent as ScrollView
+                        val attributes = window.layoutParams as android.view.WindowManager.LayoutParams
+                        assertEquals(R.style.SettingsCardAnimation, attributes.windowAnimations)
                         val content = scroll.parent as View
                         height = content.height
                         assertTrue(height in 1..(page.height * 0.66f).toInt())
@@ -262,6 +269,11 @@ class DeviceSmokeTest {
                 instrumentation.runOnMainSync {
                     try {
                         activity.findViewById<PageView>(R.id.pageView).onCenterTap?.invoke()
+                        val back = activity.findViewById<GlassActionButton>(R.id.backBar)
+                        assertTrue(back.isShown)
+                        assertEquals(context.readerDp(46), back.layoutParams.width)
+                        assertEquals(context.readerDp(46), back.layoutParams.height)
+                        assertEquals(context.getString(R.string.settings_back), back.contentDescription)
                         val toolbar = activity.findViewById<AgslGlassView>(R.id.bottomBar)
                         assertTrue(toolbar.isShown)
                         fun click(id: Int) {
@@ -289,9 +301,14 @@ class DeviceSmokeTest {
                         panel.findViewsWithText(modes, "仿真", View.FIND_VIEWS_WITH_TEXT)
                         assertEquals(1, modes.size)
                         val chosen = arrayListOf<View>()
-                        val selectedLabel = ReaderPrefs.turns.first { it.first == originalMode }.second
+                        val selectedLabel = context.getString(ReaderPrefs.turns.first { it.first == originalMode }.second)
                         panel.findViewsWithText(chosen, selectedLabel, View.FIND_VIEWS_WITH_TEXT)
                         assertTrue(chosen.single().isSelected)
+                        val accessibility = chosen.single().createAccessibilityNodeInfo()
+                        assertEquals(android.widget.RadioButton::class.java.name, accessibility.className)
+                        assertTrue(accessibility.isCheckable)
+                        assertTrue(accessibility.isChecked)
+                        assertTrue(accessibility.contentDescription.contains(selectedLabel))
                         assertTrue(chosen.single().performClick())
                         assertEquals(originalMode, ReaderPrefs.turnMode(context))
                         assertTrue(controls("返回阅读设置").single().performClick())
@@ -307,6 +324,8 @@ class DeviceSmokeTest {
                         } finally {
                             ReaderPrefs.setTheme(context, theme)
                         }
+                        assertTrue(back.performClick())
+                        assertTrue(activity.isFinishing)
                     } catch (t: Throwable) { failure = t }
                 }
                 failure?.let { throw it }
@@ -444,5 +463,60 @@ class DeviceSmokeTest {
         }
         assertEquals(1f, BookStore.load(context).single { it.title == "reader-short" && it.id in ids }.progress, 0f)
         if (args.getString("cleanupFixtures") == "true") books.forEach { BookStore.remove(context, it) }
+    }
+
+    @Test fun largeBookReusesPaginationAndRestoresItsPlace() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = File.createTempFile("large-reader-", ".txt", context.cacheDir)
+        source.bufferedWriter().use { out ->
+            repeat(4800) { paragraph ->
+                out.appendLine("第${paragraph + 1}段 " + "阅读测试包含中文标点、数字和英文 words。".repeat(15))
+            }
+        }
+        val book = try {
+            (BookStore.import(context, Uri.fromFile(source), source.name) as ImportResult.Added).book
+        } finally {
+            source.delete()
+        }
+        val cache = File(context.cacheDir, "reader-pagination/book-${book.id}.bin")
+        fun open(expectedOffset: Int, nextOffset: Int? = null): Long {
+            val start = SystemClock.elapsedRealtime()
+            val reader = instrumentation.startActivitySync(
+                Intent(context, ReaderActivity::class.java).putExtra("bookId", book.id)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ) as ReaderActivity
+            try {
+                val page = reader.findViewById<PageView>(R.id.pageView)
+                var offset = -1
+                while (offset < 0 && SystemClock.elapsedRealtime() - start < 20000) {
+                    instrumentation.runOnMainSync {
+                        if (reader.findViewById<View>(R.id.loading).visibility == View.GONE &&
+                            page.pageCount() > 1
+                        ) offset = page.currentOffset()
+                    }
+                    if (offset < 0) Thread.sleep(20)
+                }
+                assertEquals(expectedOffset, offset)
+                val elapsed = SystemClock.elapsedRealtime() - start
+                if (nextOffset != null) instrumentation.runOnMainSync { page.seekToOffset(nextOffset) }
+                return elapsed
+            } finally {
+                instrumentation.runOnMainSync { reader.finish() }
+                instrumentation.waitForIdleSync()
+            }
+        }
+        try {
+            val cold = open(0, 375_000)
+            assertTrue("Pagination cache should exist", cache.length() > 0)
+            assertTrue(cache.setLastModified(System.currentTimeMillis() - 60_000))
+            val writtenAt = cache.lastModified()
+            val warm = open(375_000)
+            assertEquals("Reopening should read the cache without rewriting it", writtenAt, cache.lastModified())
+            android.util.Log.i("ReaderTest", "Large TXT: cold=${cold}ms, cached=${warm}ms")
+        } finally {
+            BookStore.remove(context, book)
+            cache.delete()
+        }
     }
 }
