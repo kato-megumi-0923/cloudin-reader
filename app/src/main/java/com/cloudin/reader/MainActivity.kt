@@ -1,5 +1,6 @@
 package com.cloudin.reader
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
@@ -37,6 +38,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
+
+private const val PROFILE_CARD_WIDTH_DP = 345
 
 class MainActivity : AppCompatActivity() {
 
@@ -540,23 +543,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAboutCard() {
         val info = packageManager.getPackageInfo(packageName, 0)
-        val code = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        val version = "${info.versionName.orEmpty()} ($code)"
+        val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
         val dialog = Dialog(this)
-        val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
-        content.findViewById<TextView>(R.id.cardTitle).text = getString(R.string.profile_about)
-        content.findViewById<TextView>(R.id.cardMessage).apply {
-            text = getString(R.string.profile_about_details, version)
-            visibility = View.VISIBLE
+        val content = layoutInflater.inflate(R.layout.dialog_about, null)
+        content.findViewById<TextView>(R.id.aboutVersion).text =
+            getString(R.string.about_version, info.versionName.orEmpty(), code)
+        val projectUrl = "https://github.com/kato-megumi-0923/cloudin-reader"
+        fun bindLink(id: Int, label: Int, icon: Int, url: String) {
+            content.findViewById<View>(id).apply {
+                findViewById<TextView>(R.id.aboutLinkLabel).setText(label)
+                findViewById<android.widget.ImageView>(R.id.aboutLinkIcon).setImageResource(icon)
+                contentDescription = getString(label)
+                setGlassClickListener {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(this@MainActivity, R.string.about_browser_unavailable, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
-        content.findViewById<View>(R.id.cardRows).let { rows ->
-            (rows.parent as View).visibility = View.GONE
-        }
-        content.findViewById<GlassActionButton>(R.id.cardCancel).apply {
-            text = getString(R.string.ok)
-            setGlassClickListener { dialog.dismiss() }
-        }
-        showCard(dialog, content, widthDp = 345)
+        bindLink(R.id.aboutProject, R.string.about_project, R.drawable.ic_about_project, projectUrl)
+        bindLink(R.id.aboutReleases, R.string.about_releases, R.drawable.ic_about_releases, "$projectUrl/releases")
+        content.findViewById<GlassActionButton>(R.id.cardCancel).setGlassClickListener { dialog.dismiss() }
+        showCard(dialog, content, widthDp = PROFILE_CARD_WIDTH_DP)
     }
     private fun showProfileSettings() {
         val dialog = ComponentDialog(this)
@@ -648,7 +658,7 @@ class MainActivity : AppCompatActivity() {
         dialog.onBackPressedDispatcher.addCallback(dialog) { goBack() }
         dialog.setCanceledOnTouchOutside(true)
         render(null)
-        showCard(dialog, content, widthDp = 345)
+        showCard(dialog, content, widthDp = PROFILE_CARD_WIDTH_DP)
     }
 
     private fun openFolder(group: BookGroup) {

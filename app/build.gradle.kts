@@ -12,8 +12,8 @@ android {
         applicationId = "com.cloudin.reader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 118
-        versionName = "0.2.16"
+        versionCode = 119
+        versionName = "0.2.17"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

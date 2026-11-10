@@ -7,7 +7,7 @@
 ![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)
 ![AGSL](https://img.shields.io/badge/AGSL-Android%2013%2B-4B8BBE)
-![Version](https://img.shields.io/badge/version-0.2.16-9C5015)
+![Version](https://img.shields.io/badge/version-0.2.17-9C5015)
 
 一个给自己写的阅读器：书架、分页、翻页动画、阅读统计全部本地完成，界面按 iOS 26 的「液态玻璃」风格重做过一轮。
 
@@ -145,6 +145,7 @@ app/src/main/java/com/cloudin/reader/
 
 | 版本 | 主要变化 |
 |---|---|
+| 0.2.17 | 重做「关于」卡片：版本徽章、项目主页与版本历史入口；显示版本号与构建号 |
 | 0.2.16 | 阅读器拆分为分页 / 滚动 / 翻页动画 / 分页缓存四个模块；分页结果落盘复用；段落整体切分改善断行；自动阅读改为帧回调；关于页显示版本号与构建号 |
 | 0.2.15 | 阅读背景扩展到 10 种纸张并新增背景预览页；排版支持双列、上下/滚屏翻页；自动阅读、音量键翻页、亮度调节；EPUB 插图全屏查看与保存；进度按字符偏移精确恢复 |
 | 0.2.14 | 新增局域网传书；阅读进度并入设置面板；EPUB 解析加固 |

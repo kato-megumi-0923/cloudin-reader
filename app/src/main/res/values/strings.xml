@@ -92,7 +92,12 @@
     <string name="profile_no_recent">还没有阅读记录</string>
     <string name="profile_duration_hours_minutes">%1$d 小时 %2$d 分钟</string>
     <string name="profile_duration_minutes">%1$d 分钟</string>
-    <string name="profile_about_details">版本 %1$s\n支持 TXT 和 EPUB 的本地阅读器。</string>
+    <string name="about_version">%1$s (%2$d)</string>
+    <string name="about_description">本地 TXT / EPUB 阅读器</string>
+    <string name="about_project">项目主页</string>
+    <string name="about_releases">版本历史</string>
+    <string name="about_local_storage">书籍与阅读进度都保存在本机</string>
+    <string name="about_browser_unavailable">没有可打开此链接的浏览器</string>
     <string name="history_title">阅读记录</string>
     <string name="history_in_progress">正在阅读</string>
     <string name="history_completed">读完</string>
