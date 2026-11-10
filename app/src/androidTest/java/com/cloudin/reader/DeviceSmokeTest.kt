@@ -6,6 +6,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
+import android.os.SystemClock
+import android.provider.MediaStore
+import android.view.MotionEvent
 import android.view.View
 import android.view.inspector.WindowInspector
 import android.widget.ScrollView
@@ -15,7 +19,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import androidx.recyclerview.widget.RecyclerView
-import com.example.liquidglass.LiquidGlassChip
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -72,6 +75,19 @@ class DeviceSmokeTest {
 
         var shelf: MainActivity? = null
         var reader: ReaderActivity? = null
+        var viewer: ReaderImageActivity? = null
+        var savedImage: Uri? = null
+        fun savedImages(): Set<Uri> {
+            if (Build.VERSION.SDK_INT < 29) return emptySet()
+            val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            val id = MediaStore.Images.Media._ID
+            return context.contentResolver.query(collection, arrayOf(id),
+                "${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?", arrayOf("test image-%"), null)?.use { cursor ->
+                buildSet {
+                    while (cursor.moveToNext()) add(android.content.ContentUris.withAppendedId(collection, cursor.getLong(0)))
+                }
+            }.orEmpty()
+        }
         try {
             val doc = checkNotNull(DocumentLoader.load(book))
             assertEquals(2, doc.images.size)
@@ -106,19 +122,50 @@ class DeviceSmokeTest {
                 val frame = Bitmap.createBitmap(page.width / 3, page.height / 3, Bitmap.Config.ARGB_8888)
                 try {
                     page.draw(Canvas(frame).apply { scale(1f / 3, 1f / 3) })
-                    assertTrue((0 until frame.height step 3).any { y ->
-                        (0 until frame.width step 3).any { x -> frame.getPixel(x, y) == color }
-                    })
+                    val point = (0 until frame.height step 3).firstNotNullOfOrNull { y ->
+                        (0 until frame.width step 3).firstOrNull { x -> frame.getPixel(x, y) == color }?.let { it to y }
+                    }
+                    assertNotNull(point)
+                    val (x, y) = checkNotNull(point)
+                    val now = SystemClock.uptimeMillis()
+                    for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                        val event = MotionEvent.obtain(now, now, action, x * 3f + 6, y * 3f + 6, 0)
+                        page.onTouchEvent(event)
+                        event.recycle()
+                    }
                 } finally { frame.recycle() }
-                activeReader.finish()
             }
+            await("Tapping the EPUB image did not open its viewer") {
+                viewer = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance<ReaderImageActivity>().firstOrNull()
+                viewer != null
+            }
+            if (Build.VERSION.SDK_INT >= 29) {
+                val existing = savedImages()
+                var saveButton: View? = null
+                await("Image did not finish loading") {
+                    val matches = arrayListOf<View>()
+                    viewer?.window?.decorView?.findViewsWithText(matches, "保存图片", View.FIND_VIEWS_WITH_TEXT)
+                    saveButton = matches.firstOrNull()?.parent as? GlassActionButton
+                    saveButton?.isEnabled == true
+                }
+                onUi { assertTrue(checkNotNull(saveButton).performClick()) }
+                await("Image was not published to the gallery") {
+                    savedImage = (savedImages() - existing).singleOrNull()
+                    savedImage != null
+                }
+                val savedBytes = context.contentResolver.openInputStream(checkNotNull(savedImage))!!.use { it.readBytes() }
+                assertArrayEquals(bytes, savedBytes)
+            }
+            onUi { viewer?.finish(); activeReader.finish() }
             await("Opened EPUB was not visible when returning to the shelf") {
                 val position = shelfPosition()
                 position >= 0 && BookStore.load(context).any { it.id == book.id && it.lastRead > 0 } &&
                     recycler.findViewHolderForAdapterPosition(position)?.itemView?.getGlobalVisibleRect(Rect()) == true
             }
         } finally {
-            onUi { reader?.finish(); shelf?.finish() }
+            onUi { viewer?.finish(); reader?.finish(); shelf?.finish() }
+            savedImage?.let { context.contentResolver.delete(it, null, null) }
             BookStore.remove(context, book)
         }
     }
@@ -190,7 +237,7 @@ class DeviceSmokeTest {
             }
         }
         val short = checkCatalog(1, R.id.tabProgress)
-        val long = checkCatalog(50, R.id.tabFont)
+        val long = checkCatalog(50, R.id.tabSettings)
         assertTrue("Long catalog should be taller than a single-chapter catalog", long > short)
     }
 
@@ -224,36 +271,42 @@ class DeviceSmokeTest {
                             assertTrue(button.performClick())
                         }
                         val panel = activity.findViewById<AgslGlassView>(R.id.settingsPanel)
-                        click(R.id.tabTheme)
-                        assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.sectionTheme).visibility)
+                        fun controls(label: String) = arrayListOf<View>().also {
+                            panel.findViewsWithText(it, label, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+                        }
+                        assertEquals(4, (toolbar.getChildAt(0) as android.view.ViewGroup).childCount)
                         click(R.id.tabProgress)
                         assertTrue(panel.findViewById<View>(R.id.seekBar).isShown)
-                        assertEquals(1, panel.childCount)
-                        click(R.id.tabTheme)
-                        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.sectionTheme).visibility)
-                        click(R.id.tabFont)
-                        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.sectionFont).visibility)
-                        assertEquals(1, panel.childCount)
-                        click(R.id.tabTurn)
-                        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.sectionTurn).visibility)
-                        val chips = mapOf(
-                            ReaderPrefs.MODE_NONE to R.id.turnNone,
-                            ReaderPrefs.MODE_SLIDE to R.id.turnSlide,
-                            ReaderPrefs.MODE_CURL to R.id.turnCurl,
-                            ReaderPrefs.MODE_FADE to R.id.turnFade
-                        )
-                        fun assertSavedSelection() {
-                            chips.forEach { (mode, id) ->
-                                assertEquals(mode == originalMode, activity.findViewById<LiquidGlassChip>(id).isChecked)
-                            }
-                            assertEquals(originalMode, ReaderPrefs.turnMode(context))
+                        click(R.id.tabSettings)
+                        assertTrue(panel.findViewById<View>(R.id.readerSettingFont).isShown)
+                        assertTrue(controls("关闭阅读设置").isEmpty())
+                        assertTrue(panel.findViewById<View>(R.id.readerSettingMore).performClick())
+                        assertTrue(panel.findViewById<View>(R.id.readerSettingProgress).performClick())
+                        assertTrue(panel.findViewById<View>(R.id.seekBar).isShown)
+                        click(R.id.tabSettings)
+                        assertTrue(panel.findViewById<View>(R.id.readerSettingTurn).performClick())
+                        val modes = arrayListOf<View>()
+                        panel.findViewsWithText(modes, "仿真", View.FIND_VIEWS_WITH_TEXT)
+                        assertEquals(1, modes.size)
+                        val chosen = arrayListOf<View>()
+                        val selectedLabel = ReaderPrefs.turns.first { it.first == originalMode }.second
+                        panel.findViewsWithText(chosen, selectedLabel, View.FIND_VIEWS_WITH_TEXT)
+                        assertTrue(chosen.single().isSelected)
+                        assertTrue(chosen.single().performClick())
+                        assertEquals(originalMode, ReaderPrefs.turnMode(context))
+                        assertTrue(controls("返回阅读设置").single().performClick())
+                        assertTrue(panel.findViewById<View>(R.id.readerSettingFont).isShown)
+                        val theme = ReaderPrefs.theme(context)
+                        try {
+                            click(R.id.tabNight)
+                            assertEquals(!ReaderPrefs.palette(theme).dark, ReaderPrefs.palette(ReaderPrefs.theme(context)).dark)
+                            click(R.id.tabProgress)
+                            assertTrue(toolbar.findViewById<View>(R.id.tabProgress).isSelected)
+                            assertFalse(toolbar.findViewById<View>(R.id.tabSettings).isSelected)
+                            assertNull(toolbar.findViewById<View>(R.id.tabNight).background)
+                        } finally {
+                            ReaderPrefs.setTheme(context, theme)
                         }
-                        assertSavedSelection()
-                        activity.findViewById<LiquidGlassChip>(chips.getValue(originalMode)).performClick()
-                        assertSavedSelection()
-                        click(R.id.tabTheme)
-                        click(R.id.tabTurn)
-                        assertSavedSelection()
                     } catch (t: Throwable) { failure = t }
                 }
                 failure?.let { throw it }
@@ -262,6 +315,75 @@ class DeviceSmokeTest {
                 instrumentation.waitForIdleSync()
             }
         } finally {
+            BookStore.remove(context, book)
+        }
+    }
+
+    @Test fun automaticReadingStartsScrollingInCurlModeAndRestoresItOnStop() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val oldMode = ReaderPrefs.turnMode(context)
+        val oldSpeed = ReaderPrefs.autoSpeed(context)
+        val source = File.createTempFile("auto-reading-", ".txt", context.cacheDir)
+        source.writeText((1..260).joinToString("\n") { "第 $it 行，自动阅读测试正文。 ${source.name}" })
+        val book = try {
+            (BookStore.import(context, Uri.fromFile(source), source.name) as ImportResult.Added).book
+        } finally {
+            source.delete()
+        }
+        ReaderPrefs.setTurnMode(context, ReaderPrefs.MODE_CURL)
+        ReaderPrefs.setAutoSpeed(context, 85)
+        var activity: ReaderActivity? = null
+        try {
+            val reader = instrumentation.startActivitySync(
+                Intent(context, ReaderActivity::class.java).putExtra("bookId", book.id)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ) as ReaderActivity
+            activity = reader
+            val page = reader.findViewById<PageView>(R.id.pageView)
+            fun onUi(block: () -> Unit) {
+                var failure: Throwable? = null
+                instrumentation.runOnMainSync { try { block() } catch (t: Throwable) { failure = t } }
+                failure?.let { throw it }
+            }
+            fun await(timeout: Long, message: String, check: () -> Boolean) {
+                val deadline = SystemClock.uptimeMillis() + timeout
+                while (SystemClock.uptimeMillis() < deadline) {
+                    var ready = false
+                    onUi { ready = check() }
+                    if (ready) return
+                    Thread.sleep(40)
+                }
+                fail(message)
+            }
+            fun autoButton(label: String): GlassActionButton {
+                val matches = arrayListOf<View>()
+                reader.findViewById<View>(R.id.settingsPanel).findViewsWithText(matches, label, View.FIND_VIEWS_WITH_TEXT)
+                return matches.first { it.parent is GlassActionButton }.parent as GlassActionButton
+            }
+            await(8000, "Reader did not load") { page.pageCount() > 2 && reader.hasWindowFocus() }
+            onUi {
+                page.onCenterTap?.invoke()
+                reader.findViewById<View>(R.id.tabSettings).performClick()
+                autoButton("自动阅读").performClick()
+                autoButton("开始自动阅读").performClick()
+            }
+            await(2400, "Auto reading did not move the text in curl mode") { page.currentOffset() > 0 }
+            onUi {
+                page.onCenterTap?.invoke()
+                val offset = page.currentOffset()
+                reader.findViewById<View>(R.id.tabSettings).performClick()
+                autoButton("自动阅读").performClick()
+                autoButton("停止自动阅读").performClick()
+                assertTrue(page.usesCurl)
+                assertEquals(offset, page.currentOffset())
+                assertEquals(ReaderPrefs.MODE_CURL, ReaderPrefs.turnMode(context))
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity?.finish() }
+            instrumentation.waitForIdleSync()
+            ReaderPrefs.setTurnMode(context, oldMode)
+            ReaderPrefs.setAutoSpeed(context, oldSpeed)
             BookStore.remove(context, book)
         }
     }

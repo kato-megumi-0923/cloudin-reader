@@ -1,31 +1,35 @@
 package com.cloudin.reader
 
 import android.app.Dialog
+import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.view.Gravity
-import androidx.appcompat.app.AlertDialog
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.appcompat.app.AppCompatActivity
-import com.example.liquidglass.LiquidGlassChip
-import com.google.android.material.bottomsheet.BottomSheetDialog
 
 class ReaderActivity : AppCompatActivity() {
 
-    private enum class Panel { THEME, FONT, TURN, PROGRESS }
+    private enum class Panel { SETTINGS, FONT, TURN, PROGRESS, AUTO, DISPLAY, MORE }
 
     private lateinit var book: Book
     private lateinit var pageView: PageView
@@ -46,9 +50,16 @@ class ReaderActivity : AppCompatActivity() {
     private var barsVisible = false
     private var readerResumed = false
     private var readingStartedAt: Long? = null
+    private var restoredOffset: Int? = null
+    private var autoReading = false
+    private var autoFrameTime = 0L
+    private val handler = Handler(Looper.getMainLooper())
+    private val autoTick = Runnable { advanceAutomaticReading() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoredOffset = savedInstanceState?.getInt("readingOffset", -1)?.takeIf { it >= 0 }
+        autoReading = savedInstanceState?.getBoolean("autoReading") ?: false
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -69,6 +80,7 @@ class ReaderActivity : AppCompatActivity() {
             top.setPadding(top.paddingLeft, bars.top, top.paddingRight, top.paddingBottom)
             bottom.setPadding(bottom.paddingLeft, bottom.paddingTop, bottom.paddingRight, bars.bottom)
             findViewById<PageView>(R.id.pageView).setBottomInset(bars.bottom)
+            findViewById<PageView>(R.id.pageView).setTopInset(bars.top)
             insets
         }
 
@@ -85,6 +97,13 @@ class ReaderActivity : AppCompatActivity() {
         bottomArea = findViewById(R.id.bottomArea)
         topBar = findViewById(R.id.topBar)
         settingsPanel = findViewById(R.id.settingsPanel)
+        rootView.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
+            if (r - l != or - ol || b - t != ob - ot) {
+                val width = minOf(dp(if (r - l > b - t) 500 else 470), (r - l - dp(28)).coerceAtLeast(1))
+                settingsPanel.layoutParams = settingsPanel.layoutParams.apply { this.width = width }
+                if (panelSection == Panel.SETTINGS) showSettings(Panel.SETTINGS, refresh = true)
+            }
+        }
         progressControls = layoutInflater.inflate(R.layout.reader_progress_controls, settingsPanel, false)
         loading = findViewById(R.id.loading)
         txtTitle = findViewById(R.id.txtTitle)
@@ -96,9 +115,13 @@ class ReaderActivity : AppCompatActivity() {
         theme = ReaderPrefs.theme(this)
         pageView.setTheme(theme)
         pageView.setFontSize(ReaderPrefs.fontSize(this).toFloat())
+        pageView.setFontFamily(ReaderPrefs.fontFamily(this))
         pageView.setMargin(ReaderPrefs.margin(this))
         pageView.setLineSpacing(ReaderPrefs.lineSpacing(this))
-        pageView.setTurnMode(ReaderPrefs.turnMode(this))
+        applyLayoutPreferences()
+        pageView.setShowFooter(ReaderPrefs.showFooter(this))
+        pageView.setShowChapter(ReaderPrefs.showChapter(this))
+        applyBrightness()
         applyChromeColors()
 
         val backButton = findViewById<ImageButton>(R.id.btnBack)
@@ -116,7 +139,11 @@ class ReaderActivity : AppCompatActivity() {
             lastProgress = progress
             updateProgressUi(progress)
         }
-        pageView.onChapterChanged = { chapter -> txtChapter.text = chapter }
+        pageView.onChapterChanged = { chapter -> if (txtChapter.text != chapter) txtChapter.text = chapter }
+        pageView.onImageTap = { image ->
+            startActivity(Intent(this, ReaderImageActivity::class.java)
+                .putExtra("bookId", book.id).putExtra("imagePath", image.path))
+        }
         listOf(
             R.id.topBar to 22f,
             R.id.backBar to 23f,
@@ -166,11 +193,12 @@ class ReaderActivity : AppCompatActivity() {
                 }
                 document = doc
                 if (readerResumed) readingStartedAt = SystemClock.elapsedRealtime()
-                val start = (book.progress * doc.text.length).toInt()
+                val start = restoredOffset ?: book.readingOffset ?: (book.progress * doc.text.length).toInt()
                 pageView.setDocument(doc, start)
                 loading.visibility = View.GONE
                 txtChapter.text = doc.chapterAt(start)
                 updateProgressUi(lastProgress)
+                scheduleAutoReading()
             }
         }.start()
     }
@@ -178,7 +206,8 @@ class ReaderActivity : AppCompatActivity() {
     private fun updateProgressUi(progress: Float) {
         val p = (progress * 1000).toInt().coerceIn(0, 1000)
         if (seekBar.progress != p) seekBar.progress = p
-        txtProgress.text = "${(progress * 100).toInt()}%"
+        val label = "${(progress * 100).toInt()}%"
+        if (txtProgress.text != label) txtProgress.text = label
     }
 
     private fun applyChromeColors() {
@@ -187,19 +216,26 @@ class ReaderActivity : AppCompatActivity() {
         topBar.setBackgroundColor(Color.TRANSPARENT)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
-        val lightIcons = theme != ReaderPrefs.THEME_NIGHT
+        val dark = ReaderPrefs.palette(theme).dark
         WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = lightIcons
-            isAppearanceLightNavigationBars = lightIcons
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
         }
         txtTitle.setTextColor(ink)
         txtChapter.setTextColor(soft)
+        txtChapter.visibility = if (ReaderPrefs.showChapter(this)) View.VISIBLE else View.GONE
         txtProgress.setTextColor(soft)
+        findViewById<ImageButton>(R.id.btnBack).setColorFilter(ink)
+        val sliderTint = ColorStateList.valueOf(ink)
+        seekBar.progressTintList = sliderTint
+        seekBar.thumbTintList = sliderTint
+        seekBar.progressBackgroundTintList = ColorStateList.valueOf(soft)
         loading.setTextColor(soft)
         findViewById<View>(R.id.root).setBackgroundColor(ReaderPrefs.background(theme))
         listOf(R.id.topBar, R.id.backBar, R.id.bottomBar, R.id.settingsPanel).forEach { id ->
-            findViewById<AgslGlassView>(id).tintColor = ReaderPrefs.background(theme)
+            findViewById<AgslGlassView>(id).tintColor = ReaderPrefs.chrome(theme)
         }
+        settingsPanel.tintAlpha = if (dark) 0.62f else 0.48f
         val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
         val row = toolbar.getChildAt(0) as LinearLayout
         for (index in 0 until row.childCount) {
@@ -207,15 +243,32 @@ class ReaderActivity : AppCompatActivity() {
             (item.getChildAt(0) as TextView).setTextColor(ink)
             (item.getChildAt(1) as TextView).setTextColor(soft)
         }
+        val night = toolbar.findViewById<LinearLayout>(R.id.tabNight)
+        (night.getChildAt(0) as TextView).text = if (dark) "☼" else "☾"
+        (night.getChildAt(1) as TextView).text = if (dark) "日间" else "夜间"
+        night.contentDescription = if (dark) "日间" else "夜间"
+        val selection = if (dark) 0x20FFFFFF else 0x1C5F441F
+        val activeTab = when (panelSection) {
+            null -> View.NO_ID
+            Panel.PROGRESS -> R.id.tabProgress
+            else -> R.id.tabSettings
+        }
+        listOf(R.id.tabProgress, R.id.tabSettings).forEach { id ->
+            toolbar.findViewById<View>(id).apply {
+                isSelected = id == activeTab
+                background = if (isSelected) readerPill(selection) else null
+            }
+        }
     }
 
     private fun setupBottomTabs() {
         val actions: List<Pair<Int, () -> Unit>> = listOf(
             R.id.tabCatalog to { showCatalog() },
             R.id.tabProgress to { showSettings(Panel.PROGRESS) },
-            R.id.tabTheme to { showSettings(Panel.THEME) },
-            R.id.tabFont to { showSettings(Panel.FONT) },
-            R.id.tabTurn to { showSettings(Panel.TURN) }
+            R.id.tabNight to {
+                changeTheme(if (ReaderPrefs.palette(theme).dark) ReaderPrefs.dayTheme(this) else ReaderPrefs.THEME_NIGHT)
+            },
+            R.id.tabSettings to { showSettings(Panel.SETTINGS) }
         )
         val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
         actions.forEach { (id, action) ->
@@ -231,7 +284,9 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun toggleBars() {
         barsVisible = !barsVisible
+        pageView.setChromeVisible(barsVisible)
         if (!barsVisible) hideSettingsPanel()
+        scheduleAutoReading()
         animateBar(topArea, barsVisible)
         animateBar(bottomArea, barsVisible)
     }
@@ -248,141 +303,258 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    private fun showSettings(section: Panel) {
-        if (panelSection == section) {
+    private fun showSettings(section: Panel, refresh: Boolean = false) {
+        if (panelSection == section && !refresh) {
             hideSettingsPanel()
             return
         }
+        val opening = panelSection == null
         settingsPanel.animate().cancel()
         panelSection = section
-        val content = if (section == Panel.PROGRESS) progressControls
-            else layoutInflater.inflate(R.layout.sheet_reader_settings, settingsPanel, false)
-        GlassStyle.load(this).applyTo(content)
+        applyChromeColors()
+        val content = when (section) {
+            Panel.SETTINGS -> mainSettings()
+            Panel.FONT -> fontSettings()
+            Panel.TURN -> sectionPanel("翻页方式") {
+                addView(readerTurnOptions(theme, pageView) { applyLayoutPreferences() })
+            }
+            Panel.PROGRESS -> sectionPanel("阅读进度") {
+                (progressControls.parent as? ViewGroup)?.removeView(progressControls)
+                addView(progressControls, LinearLayout.LayoutParams(-1, -2))
+            }
+            Panel.AUTO -> sectionPanel("自动阅读") {
+                val speed = slider("速度", ReaderPrefs.autoSpeed(this@ReaderActivity), 10, 90) {
+                    ReaderPrefs.setAutoSpeed(this@ReaderActivity, it)
+                    scheduleAutoReading()
+                }
+                addView(speed, rowParams())
+                addView(panelButton(if (autoReading) "停止自动阅读" else "开始自动阅读") {
+                    autoReading = !autoReading
+                    applyLayoutPreferences()
+                    if (autoReading && barsVisible) toggleBars() else showSettings(Panel.SETTINGS)
+                    scheduleAutoReading()
+                }, rowParams())
+            }
+            Panel.DISPLAY -> sectionPanel("显示设置") {
+                addView(settingCheck("显示章节标题", ReaderPrefs.showChapter(this@ReaderActivity)) {
+                    ReaderPrefs.setShowChapter(this@ReaderActivity, it)
+                    pageView.setShowChapter(it)
+                    applyChromeColors()
+                }, rowParams())
+                addView(settingCheck("显示底部阅读进度", ReaderPrefs.showFooter(this@ReaderActivity)) {
+                    ReaderPrefs.setShowFooter(this@ReaderActivity, it)
+                    pageView.setShowFooter(it)
+                }, rowParams())
+            }
+            Panel.MORE -> sectionPanel("更多设置") {
+                addView(settingCheck("音量键翻页", ReaderPrefs.volumeTurns(this@ReaderActivity)) {
+                    ReaderPrefs.setVolumeTurns(this@ReaderActivity, it)
+                }, rowParams())
+                addView(panelButton("阅读进度 ›", R.id.readerSettingProgress) { showSettings(Panel.PROGRESS) }, rowParams())
+            }
+        }
         settingsPanel.removeAllViews()
-        settingsPanel.addView(content)
+        val scroll = object : ScrollView(this) {
+            override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+                val safeHeight = (pageView.height * 0.62f).toInt().coerceAtLeast(dp(120))
+                val maxHeight = if (MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED) safeHeight
+                    else minOf(safeHeight, MeasureSpec.getSize(heightSpec))
+                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST))
+            }
+        }.apply {
+            isVerticalScrollBarEnabled = false
+            addView(content, FrameLayout.LayoutParams(-1, -2))
+        }
+        settingsPanel.addView(scroll, FrameLayout.LayoutParams(-1, -2))
         settingsPanel.visibility = View.VISIBLE
-        settingsPanel.translationY = if (settingsPanel.height > 0) settingsPanel.height.toFloat() else 420f
-        settingsPanel.animate()
-            .translationY(0f)
-            .setDuration(340)
-            .setInterpolator(android.view.animation.DecelerateInterpolator(1.8f))
-            .setUpdateListener { settingsPanel.invalidate() }
-            .start()
+        settingsPanel.translationY = if (opening) dp(22).toFloat() else 0f
+        scroll.alpha = 0f
+        settingsPanel.animate().translationY(0f).setDuration(220)
+            .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        scroll.animate().alpha(1f).setDuration(160).start()
+    }
 
+    private fun mainSettings() = sectionPanel("阅读设置", main = true) {
+        val followSystem = ReaderPrefs.followsBrightness(this@ReaderActivity)
+        val brightness = slider("亮度", ReaderPrefs.brightness(this@ReaderActivity), 1, 100, "%") {
+            ReaderPrefs.setBrightness(this@ReaderActivity, it)
+            applyBrightness()
+        }
+        val level = brightness.getChildAt(1)
+        val levelText = brightness.getChildAt(2) as TextView
+        fun updateBrightnessState(checked: Boolean) {
+            level.isEnabled = !checked
+            levelText.text = if (checked) "系统" else "${ReaderPrefs.brightness(this@ReaderActivity)}%"
+        }
+        brightness.addView(settingCheck("跟随系统", followSystem) {
+            ReaderPrefs.setFollowsBrightness(this@ReaderActivity, it)
+            updateBrightnessState(it)
+            applyBrightness()
+        })
+        updateBrightnessState(followSystem)
+        addView(brightness, rowParams())
 
-        if (section == Panel.PROGRESS) return
-        content.findViewById<View>(R.id.sectionFont).visibility =
-            if (section == Panel.FONT) View.VISIBLE else View.GONE
-        content.findViewById<View>(R.id.sectionTheme).visibility =
-            if (section == Panel.THEME) View.VISIBLE else View.GONE
-        content.findViewById<View>(R.id.sectionTurn).visibility =
-            if (section == Panel.TURN) View.VISIBLE else View.GONE
-
-        val sliderFont = content.findViewById<WeChatSlider>(R.id.sliderFont)
-        sliderFont.applyTheme(theme)
-        sliderFont.min = 14
-        sliderFont.max = 32
-        sliderFont.value = ReaderPrefs.fontSize(this).coerceIn(14, 32)
-        sliderFont.leftText = "A"
-        sliderFont.rightText = "A"
-        sliderFont.onChange = { size ->
-            ReaderPrefs.setFontSize(this, size)
+        val fontRow = controlRow()
+        fontRow.addView(readerLabel("字号", ReaderPrefs.softInk(theme), 13f), LinearLayout.LayoutParams(dp(44), -1))
+        val stepper = controlRow().apply {
+            background = readerPill(if (ReaderPrefs.palette(theme).dark) 0x20FFFFFF else 0x1B473315)
+        }
+        val sizeLabel = readerLabel(ReaderPrefs.fontSize(this@ReaderActivity).toString(), ReaderPrefs.ink(theme), 15f)
+        fun changeFont(delta: Int) {
+            val size = (ReaderPrefs.fontSize(this@ReaderActivity) + delta).coerceIn(14, 32)
+            ReaderPrefs.setFontSize(this@ReaderActivity, size)
             pageView.setFontSize(size.toFloat())
+            sizeLabel.text = size.toString()
         }
+        stepper.addView(panelButton("−") { changeFont(-1) }, weighted())
+        stepper.addView(sizeLabel, weighted())
+        stepper.addView(panelButton("＋") { changeFont(1) }, weighted())
+        fontRow.addView(stepper, weighted())
+        fontRow.addView(panelButton("字体与间距 ›", R.id.readerSettingFont) { showSettings(Panel.FONT) },
+            weighted().apply { marginStart = dp(8) })
+        addView(fontRow, rowParams())
 
-        val sliderMargin = content.findViewById<WeChatSlider>(R.id.sliderMargin)
-        sliderMargin.applyTheme(theme)
-        sliderMargin.min = 0
-        sliderMargin.max = 100
-        sliderMargin.value = ReaderPrefs.margin(this)
-        sliderMargin.leftText = "小"
-        sliderMargin.rightText = "大"
-        sliderMargin.thumbText = "边距"
-        sliderMargin.onChange = { v ->
-            ReaderPrefs.setMargin(this, v)
-            pageView.setMargin(v)
-        }
-
-        val sliderLine = content.findViewById<WeChatSlider>(R.id.sliderLine)
-        sliderLine.applyTheme(theme)
-        sliderLine.min = 0
-        sliderLine.max = 100
-        sliderLine.value = ReaderPrefs.lineSpacing(this)
-        sliderLine.leftText = "紧"
-        sliderLine.rightText = "松"
-        sliderLine.thumbText = "行距"
-        sliderLine.onChange = { v ->
-            ReaderPrefs.setLineSpacing(this, v)
-            pageView.setLineSpacing(v)
-        }
-
-        val swatches = mapOf(
-            ReaderPrefs.THEME_PAPER to content.findViewById<View>(R.id.swatchPaper),
-            ReaderPrefs.THEME_WHITE to content.findViewById<View>(R.id.swatchWhite),
-            ReaderPrefs.THEME_NIGHT to content.findViewById<View>(R.id.swatchNight),
-            ReaderPrefs.THEME_GREEN to content.findViewById<View>(R.id.swatchWood)
-        )
-        val themeHosts = mapOf(
-            ReaderPrefs.THEME_PAPER to content.findViewById<View>(R.id.themePaper),
-            ReaderPrefs.THEME_WHITE to content.findViewById<View>(R.id.themeWhite),
-            ReaderPrefs.THEME_NIGHT to content.findViewById<View>(R.id.themeNight),
-            ReaderPrefs.THEME_GREEN to content.findViewById<View>(R.id.themeWood)
-        )
-        fun paintSwatches() {
-            swatches.forEach { (t, view) ->
-                val selected = t == theme
-                view.background = GradientDrawable().apply {
+        val themes = listOf(ReaderPrefs.THEME_PURE_WHITE, ReaderPrefs.THEME_NIGHT, ReaderPrefs.THEME_BLACK,
+            ReaderPrefs.THEME_GREEN, ReaderPrefs.THEME_PAPER, ReaderPrefs.THEME_WOOD)
+        val narrow = settingsPanel.layoutParams.width in 1 until dp(400)
+        val swatchRow = controlRow()
+        themes.forEach { id ->
+            val frame = FrameLayout(this@ReaderActivity)
+            val palette = ReaderPrefs.palette(id)
+            val selected = id == theme
+            val swatch = readerLabel(if (selected) "✓" else "", palette.ink, 16f).apply {
+                contentDescription = if (selected) "${palette.name}，已选中" else palette.name
+                isSelected = selected
+                background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(ReaderPrefs.swatchColor(t))
-                    setStroke(
-                        (if (selected) 3 else 1) * resources.displayMetrics.density.toInt(),
-                        if (selected) Color.parseColor("#E0A458") else Color.parseColor("#D8D8D8")
-                    )
+                    setColor(palette.paper)
+                    setStroke(dp(if (selected) 2 else 1), if (selected) ReaderPrefs.ink(theme) else 0x33444444)
                 }
             }
-        }
-        paintSwatches()
-        themeHosts.forEach { (t, host) ->
-            host.setGlassClickListener {
-                theme = t
-                ReaderPrefs.setTheme(this, t)
-                pageView.setTheme(t)
-                applyChromeColors()
-                settingsPanel.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                sliderFont.applyTheme(t)
-                sliderMargin.applyTheme(t)
-                sliderLine.applyTheme(t)
-                paintSwatches()
+            frame.addView(swatch, FrameLayout.LayoutParams(dp(if (narrow) 32 else 38), dp(if (narrow) 32 else 38), Gravity.CENTER))
+            frame.setGlassClickListener(swatch) {
+                changeTheme(id)
             }
+            frame.contentDescription = swatch.contentDescription
+            swatch.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            swatchRow.addView(frame, weighted())
+        }
+        val gallery = panelButton("更多背景 ›") {
+            startActivity(Intent(this@ReaderActivity, ReadingBackgroundActivity::class.java))
+        }
+        if (!narrow) swatchRow.addView(gallery, LinearLayout.LayoutParams(dp(94), -1))
+        addView(swatchRow, rowParams())
+        if (narrow) addView(gallery, rowParams())
+
+        val actions = listOf(
+            panelButton("自动阅读") { showSettings(Panel.AUTO) },
+            panelButton("翻页方式", R.id.readerSettingTurn) { showSettings(Panel.TURN) },
+            panelButton("显示设置") { showSettings(Panel.DISPLAY) },
+            panelButton("更多设置", R.id.readerSettingMore) { showSettings(Panel.MORE) }
+        )
+        actions.chunked(if (narrow) 2 else 4).forEach { buttons ->
+            val row = controlRow()
+            buttons.forEachIndexed { index, button ->
+                row.addView(button, weighted().apply { if (index > 0) marginStart = dp(6) })
+            }
+            addView(row, rowParams())
+        }
+    }
+
+    private fun fontSettings() = sectionPanel("字体与间距") {
+        val fonts = ReaderPrefs.fonts
+        addView(readerSegments(fonts.map { it.second }, fonts.indexOfFirst {
+            it.first == ReaderPrefs.fontFamily(this@ReaderActivity)
+        }, theme, pageView, "字体") {
+            val family = fonts[it].first
+            ReaderPrefs.setFontFamily(this@ReaderActivity, family)
+            pageView.setFontFamily(family)
+        }, rowParams())
+        addView(slider("字号", ReaderPrefs.fontSize(this@ReaderActivity), 14, 32) {
+            ReaderPrefs.setFontSize(this@ReaderActivity, it)
+            pageView.setFontSize(it.toFloat())
+        }, rowParams())
+        addView(slider("边距", ReaderPrefs.margin(this@ReaderActivity), 0, 100) {
+            ReaderPrefs.setMargin(this@ReaderActivity, it)
+            pageView.setMargin(it)
+        }, rowParams())
+        addView(slider("行距", ReaderPrefs.lineSpacing(this@ReaderActivity), 0, 100) {
+            ReaderPrefs.setLineSpacing(this@ReaderActivity, it)
+            pageView.setLineSpacing(it)
+        }, rowParams())
+    }
+
+    private fun sectionPanel(title: String, main: Boolean = false, populate: LinearLayout.() -> Unit) =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(12))
+            val heading = FrameLayout(this@ReaderActivity)
+            heading.addView(readerLabel(title, ReaderPrefs.ink(theme), 16f).apply {
+                setTypeface(null, Typeface.BOLD)
+                if (main) gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            }, FrameLayout.LayoutParams(-1, -1))
+            if (!main) {
+                val back = glassBackButton(ReaderPrefs.ink(theme), pageView, ReaderPrefs.chrome(theme)) {
+                    showSettings(Panel.SETTINGS)
+                }.apply {
+                    contentDescription = "返回阅读设置"
+                }
+                heading.addView(back, FrameLayout.LayoutParams(dp(44), dp(44),
+                    Gravity.START or Gravity.CENTER_VERTICAL))
+            }
+            addView(heading, LinearLayout.LayoutParams(-1, dp(46)))
+            populate()
         }
 
-        val chips = mapOf(
-            ReaderPrefs.MODE_NONE to content.findViewById<LiquidGlassChip>(R.id.turnNone),
-            ReaderPrefs.MODE_SLIDE to content.findViewById<LiquidGlassChip>(R.id.turnSlide),
-            ReaderPrefs.MODE_CURL to content.findViewById<LiquidGlassChip>(R.id.turnCurl),
-            ReaderPrefs.MODE_FADE to content.findViewById<LiquidGlassChip>(R.id.turnFade)
-        )
-        var currentMode = ReaderPrefs.turnMode(this)
-        chips.forEach { (mode, chip) ->
-            chip.backdropSource = pageView
-            chip.enableDynamicBackground = true
-            chip.isCheckable = true
-            chip.isChecked = mode == currentMode
-            chip.enablePressEffect = false
-            chip.setGlassClickListener {
-                if (mode != currentMode) {
-                    currentMode = mode
-                    ReaderPrefs.setTurnMode(this, mode)
-                    pageView.setTurnMode(mode)
+    private fun controlRow() = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+    private fun rowParams() = LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(6) }
+    private fun weighted() = LinearLayout.LayoutParams(0, -1, 1f)
+
+    private fun panelButton(label: String, id: Int = View.NO_ID, action: () -> Unit) =
+        readerButton(label, theme, pageView, action).apply { this.id = id }
+
+    private fun settingCheck(label: String, checked: Boolean, onChange: (Boolean) -> Unit) = CheckBox(this).apply {
+        text = label
+        textSize = 13f
+        setTextColor(ReaderPrefs.ink(theme))
+        buttonTintList = ColorStateList.valueOf(ReaderPrefs.ink(theme))
+        isChecked = checked
+        setOnCheckedChangeListener { _, value -> onChange(value) }
+    }
+
+    private fun slider(label: String, value: Int, min: Int, max: Int, suffix: String = "",
+                       onChange: (Int) -> Unit): LinearLayout {
+        val row = controlRow()
+        row.addView(readerLabel(label, ReaderPrefs.softInk(theme), 13f), LinearLayout.LayoutParams(dp(44), -1))
+        val valueLabel = readerLabel("$value$suffix", ReaderPrefs.ink(theme), 13f)
+        val slider = SeekBar(this).apply {
+            contentDescription = label
+            this.max = max - min
+            progress = value - min
+            val tint = ColorStateList.valueOf(ReaderPrefs.ink(theme))
+            progressTintList = tint
+            thumbTintList = tint
+            progressBackgroundTintList = ColorStateList.valueOf(ReaderPrefs.softInk(theme))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        valueLabel.text = "${progress + min}$suffix"
+                        onChange(progress + min)
+                    }
                 }
-                chips.forEach { (otherMode, other) -> other.isChecked = otherMode == currentMode }
-            }
+                override fun onStartTrackingTouch(bar: SeekBar) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar) = Unit
+            })
         }
+        row.addView(slider, weighted())
+        row.addView(valueLabel, LinearLayout.LayoutParams(dp(44), -1))
+        return row
     }
 
     private fun hideSettingsPanel() {
         if (panelSection == null) return
         panelSection = null
+        applyChromeColors()
         settingsPanel.animate().cancel()
         settingsPanel.animate().translationY(settingsPanel.height.toFloat()).setDuration(140)
             .withEndAction {
@@ -394,25 +566,30 @@ class ReaderActivity : AppCompatActivity() {
         title: String,
         message: String?,
         okText: String?,
-        rows: List<Pair<String, Int>> = emptyList(),
+        rows: List<String> = emptyList(),
         onPick: ((Int) -> Unit)? = null
     ) {
         val dialog = Dialog(this)
         val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
-        content.findViewById<TextView>(R.id.cardTitle).text = title
+        val ink = ReaderPrefs.ink(theme)
+        content.findViewById<TextView>(R.id.cardTitle).apply {
+            text = title
+            setTextColor(ink)
+        }
         if (!message.isNullOrEmpty()) {
             val m = content.findViewById<TextView>(R.id.cardMessage)
             m.text = message
+            m.setTextColor(ReaderPrefs.softInk(theme))
             m.visibility = View.VISIBLE
         }
         val container = content.findViewById<LinearLayout>(R.id.cardRows)
         val chapterScroll = container.parent as android.widget.ScrollView
-        rows.forEachIndexed { index, pair ->
+        rows.forEachIndexed { index, label ->
             val tv = TextView(this)
-            tv.text = pair.first
+            tv.text = label
             tv.gravity = Gravity.CENTER
             tv.textSize = 15f
-            tv.setTextColor(pair.second)
+            tv.setTextColor(ink)
             val v = (14 * resources.displayMetrics.density).toInt()
             tv.setPadding(v, v, v, v)
             tv.isClickable = true
@@ -423,6 +600,8 @@ class ReaderActivity : AppCompatActivity() {
             container.addView(tv)
         }
         val cancel = content.findViewById<GlassActionButton>(R.id.cardCancel)
+        cancel.textView.setTextColor(ink)
+        cancel.tintColor = ReaderPrefs.chrome(theme)
         if (!okText.isNullOrEmpty()) {
             cancel.text = okText
             cancel.setGlassClickListener {
@@ -435,7 +614,7 @@ class ReaderActivity : AppCompatActivity() {
         }
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = 26 * resources.displayMetrics.density
-            setColor(0xCBFFFFFF.toInt())
+            setColor((ReaderPrefs.chrome(theme) and 0xFFFFFF) or 0xB8000000.toInt())
         }
         val availableWidth = pageView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
         val availableHeight = pageView.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
@@ -455,6 +634,7 @@ class ReaderActivity : AppCompatActivity() {
             useControlOptics(26f)
             usePopupOptics()
             backdropSource = pageView
+            tintColor = ReaderPrefs.chrome(theme)
         }
         cancel.backdropSource = pageView
         cancel.usePopupOptics()
@@ -472,71 +652,10 @@ class ReaderActivity : AppCompatActivity() {
         dialogWindow?.setLayout(dialogWidth, FrameLayout.LayoutParams.WRAP_CONTENT)
         GlassStyle.load(this).applyTo(glass)
     }
-    private var progressDialog: Dialog? = null
-    private var progressSeek: SeekBar? = null
-
-    private fun showProgressBlurDialog() {
-        progressDialog?.dismiss()
-        val dialog = Dialog(this)
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.gravity = Gravity.CENTER_VERTICAL
-        val pad = (18 * resources.displayMetrics.density).toInt()
-        row.setPadding(pad, pad, pad, pad)
-        val tv = TextView(this)
-        tv.text = "${(lastProgress * 100).toInt()}%"
-        tv.textSize = 12f
-        tv.setTextColor(0xFF555555.toInt())
-        row.addView(tv, LinearLayout.LayoutParams(dp(48), LinearLayout.LayoutParams.WRAP_CONTENT))
-        val sb = SeekBar(this)
-        sb.max = 1000
-        sb.progress = (lastProgress * 1000).toInt()
-        sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    tv.text = "${progress / 10}%"
-                    val doc = document ?: return
-                    pageView.seekToOffset((progress / 1000f * doc.text.length).toInt())
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        row.addView(sb, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val bg = android.graphics.drawable.GradientDrawable()
-        bg.cornerRadius = dp(24).toFloat()
-        bg.setColor(0xCFFFFFFF.toInt())
-        bg.setStroke(dp(1), 0xE6FFFFFF.toInt())
-        row.background = bg
-        row.layoutParams = android.view.ViewGroup.LayoutParams(
-            (720 * resources.displayMetrics.density).toInt(),
-            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        dialog.setContentView(row)
-
-        val w = dialog.window
-        w?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-        val lp = w!!.attributes
-        lp.width = (720 * resources.displayMetrics.density).toInt()
-        lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-        lp.gravity = Gravity.BOTTOM
-        lp.y = dp(96)
-        lp.dimAmount = 0f
-        lp.flags = lp.flags or android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            lp.blurBehindRadius = dp(40)
-        }
-        w.attributes = lp
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            w.setBackgroundBlurRadius(dp(40))
-        }
-        dialog.show()
-        progressSeek = sb
-        progressDialog = dialog
-    }
     private fun showCatalog() {
         val doc = document ?: return
         barsVisible = false
+        pageView.setChromeVisible(false)
         listOf(topArea, bottomArea, settingsPanel).forEach { view ->
             view.animate().cancel()
             view.visibility = View.GONE
@@ -545,7 +664,8 @@ class ReaderActivity : AppCompatActivity() {
         }
         panelSection = null
         settingsPanel.removeAllViews()
-        progressDialog?.dismiss()
+        applyChromeColors()
+        scheduleAutoReading()
         if (doc.chapters.isEmpty()) {
             showGlassNotice(
                 "目录",
@@ -554,16 +674,89 @@ class ReaderActivity : AppCompatActivity() {
             )
             return
         }
-        val rows = doc.chapters.map { it.title to 0xFF222222.toInt() }
+        val rows = doc.chapters.map { it.title }
         showGlassNotice("目录", null, null, rows) { index ->
             val offset = doc.chapters[index].offset
             pageView.seekToOffset(offset)
-            saveProgress(offset.toFloat() / doc.text.length)
+            saveProgress(lastProgress)
         }
     }
 
     private fun saveProgress(progress: Float) {
-        runCatching { BookStore.updateProgress(this, book.id, progress) }
+        runCatching { BookStore.updateProgress(this, book.id, progress, pageView.currentOffset()) }
+    }
+
+    private fun changeTheme(value: Int) {
+        ReaderPrefs.setTheme(this, value)
+        applyTheme(value)
+    }
+
+    private fun applyTheme(value: Int) {
+        theme = value
+        pageView.setTheme(value)
+        applyChromeColors()
+        panelSection?.let { showSettings(it, refresh = true) }
+    }
+
+    private fun applyLayoutPreferences() {
+        pageView.setTurnMode(activeTurnMode())
+        pageView.setDoubleColumns(ReaderPrefs.doubleColumns(this))
+    }
+
+    private fun activeTurnMode() = if (autoReading) ReaderPrefs.MODE_SCROLL else ReaderPrefs.turnMode(this)
+
+    private fun applyBrightness() {
+        window.attributes = window.attributes.apply {
+            screenBrightness = if (ReaderPrefs.followsBrightness(this@ReaderActivity)) -1f
+                else (ReaderPrefs.brightness(this@ReaderActivity) / 100f).coerceIn(0.01f, 1f)
+        }
+    }
+
+    private fun scheduleAutoReading() {
+        handler.removeCallbacks(autoTick)
+        val running = autoReading && readerResumed && !barsVisible && document != null && hasWindowFocus()
+        val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        if (running) window.addFlags(flag) else window.clearFlags(flag)
+        if (!running) return
+        autoFrameTime = SystemClock.uptimeMillis()
+        handler.postDelayed(autoTick, 16L)
+    }
+
+    private fun advanceAutomaticReading() {
+        if (pageView.isAtEnd()) {
+            autoReading = false
+            applyLayoutPreferences()
+            document?.let { pageView.seekToOffset(it.text.length) }
+            scheduleAutoReading()
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        val elapsed = (now - autoFrameTime).coerceIn(0L, 100L)
+        autoFrameTime = now
+        val pixelsPerSecond = ReaderPrefs.autoSpeed(this) * resources.displayMetrics.density
+        pageView.advanceScroll(pixelsPerSecond * elapsed / 1000f)
+        handler.postDelayed(autoTick, 16L)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        scheduleAutoReading()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (document != null && ReaderPrefs.volumeTurns(this) &&
+            (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN)) {
+            if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) pageView.prevPage() else pageView.nextPage()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        if (document != null) outState.putInt("readingOffset", pageView.currentOffset())
+        else restoredOffset?.let { outState.putInt("readingOffset", it) }
+        outState.putBoolean("autoReading", autoReading)
+        super.onSaveInstanceState(outState)
     }
 
     private var downRawX = 0f
@@ -584,7 +777,11 @@ class ReaderActivity : AppCompatActivity() {
                 if (!globalSwipeDone) {
                     val dx = ev.rawX - downRawX
                     val dy = ev.rawY - downRawY
-                    if (kotlin.math.abs(dx) > dp(48) && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.4f) {
+                    val mode = activeTurnMode()
+                    val vertical = mode == ReaderPrefs.MODE_VERTICAL || mode == ReaderPrefs.MODE_SCROLL
+                    val travel = if (vertical) dy else dx
+                    val across = if (vertical) dx else dy
+                    if (kotlin.math.abs(travel) > dp(48) && kotlin.math.abs(travel) > kotlin.math.abs(across) * 1.4f) {
                         // 落在栏/胶囊上时由 Activity 接管；面板（含滑杆）打开时不接管
                         val panelOpen = settingsPanel.visibility == View.VISIBLE
                         val onChrome = listOf(
@@ -612,7 +809,7 @@ class ReaderActivity : AppCompatActivity() {
                                 )
                                 pageView.onTouchEvent(down)
                                 down.recycle()
-                            } else if (dx < 0) {
+                            } else if (travel < 0) {
                                 pageView.nextPage(y)
                             } else {
                                 pageView.prevPage(y)
@@ -638,11 +835,17 @@ class ReaderActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         readerResumed = true
+        if (::pageView.isInitialized) {
+            val savedTheme = ReaderPrefs.theme(this)
+            if (savedTheme != theme) applyTheme(savedTheme)
+        }
         if (document != null) readingStartedAt = SystemClock.elapsedRealtime()
+        scheduleAutoReading()
     }
 
     override fun onPause() {
         readerResumed = false
+        scheduleAutoReading()
         readingStartedAt?.let {
             ReadingStats.record(this, System.currentTimeMillis(), SystemClock.elapsedRealtime() - it, bookId = book.id)
         }

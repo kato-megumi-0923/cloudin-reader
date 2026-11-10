@@ -2,7 +2,6 @@ package com.cloudin.reader
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -18,7 +17,6 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -57,21 +55,13 @@ class SearchActivity : AppCompatActivity() {
         }
         books = BookStore.load(this).sortedByDescending { it.lastRead }
 
+        val backdrop = View(this).apply { setBackgroundColor(paper) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(paper)
         }
         val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        val back = ImageButton(this).apply {
-            contentDescription = "返回"
-            setImageResource(R.drawable.ic_back)
-            imageTintList = ColorStateList.valueOf(ink)
-            val attr = android.util.TypedValue()
-            theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, attr, true)
-            setBackgroundResource(attr.resourceId)
-            setOnClickListener { finish() }
-        }
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val back = glassBackButton(ink, backdrop, paper) { finish() }
+        toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(10) })
 
         input = EditText(this).apply {
             hint = "搜索书名 / 作者"
@@ -149,7 +139,10 @@ class SearchActivity : AppCompatActivity() {
         body.addView(empty, FrameLayout.LayoutParams(-1, -1))
         body.addView(list, FrameLayout.LayoutParams(-1, -1))
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        setContentView(FrameLayout(this).apply {
+            addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+            addView(root, FrameLayout.LayoutParams(-1, -1))
+        })
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(

@@ -223,6 +223,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.actRemove).setGlassClickListener(actionSheet) { deleteSelected() }
         btnMode.setGlassClickListener { toggleLayout() }
         btnFormat.setGlassClickListener { showFormatMenu() }
+        btnBack.useBackIcon(getColor(R.color.shelf_title))
         btnBack.setGlassClickListener { closeFolder() }
 
         recycler.post {
@@ -528,6 +529,8 @@ class MainActivity : AppCompatActivity() {
         else getString(R.string.profile_duration_minutes, minutes)
     }
 
+    private enum class ProfileSettingsPage { TURN, SHELF, GLASS }
+
     private data class ProfileSetting(
         val title: String,
         val choices: List<String>,
@@ -561,17 +564,11 @@ class MainActivity : AppCompatActivity() {
         val back = content.findViewById<GlassActionButton>(R.id.cardBack)
         val backdrop = findViewById<View>(R.id.root)
         val color = getColor(R.color.shelf_title)
-        val settings = listOf(
-            ProfileSetting("阅读背景", listOf("纸张", "白色", "夜间", "护眼绿"), { ReaderPrefs.theme(this) }) {
-                ReaderPrefs.setTheme(this, it)
-            },
-            ProfileSetting("翻页方式", listOf("无", "平移", "仿真", "淡入"), { ReaderPrefs.turnMode(this) }) {
-                ReaderPrefs.setTurnMode(this, it)
-            },
-            ProfileSetting("书架布局", listOf("网格", "列表"), { layoutMode.ordinal }) {
+        val settings = linkedMapOf(
+            ProfileSettingsPage.SHELF to ProfileSetting("书架布局", listOf("网格", "列表"), { layoutMode.ordinal }) {
                 if (it != layoutMode.ordinal) toggleLayout()
             },
-            ProfileSetting(
+            ProfileSettingsPage.GLASS to ProfileSetting(
                 getString(R.string.profile_glass_style),
                 GlassStyle.entries.map { getString(it.label) },
                 { GlassStyle.load(this).ordinal }
@@ -585,42 +582,41 @@ class MainActivity : AppCompatActivity() {
 
         content.findViewById<View>(R.id.cardCancel).visibility = View.GONE
         content.setPadding(0, 0, 0, dp(14))
-        rows.minimumHeight = dp(56) * settings.size
         rows.gravity = Gravity.CENTER_VERTICAL
         back.visibility = View.VISIBLE
-        back.textView.setPadding(0, 0, 0, 0)
+        back.useBackIcon(color)
 
-        var current: ProfileSetting? = null
+        var current: ProfileSettingsPage? = null
         var transitioning = false
-        lateinit var navigate: (ProfileSetting?) -> Unit
+        lateinit var navigate: (ProfileSettingsPage?) -> Unit
 
-        fun render(setting: ProfileSetting?) {
-            current = setting
-            cardTitle.text = setting?.title ?: getString(R.string.profile_settings)
+        fun render(page: ProfileSettingsPage?) {
+            current = page
             rows.removeAllViews()
-            if (setting == null) {
-                settings.forEach { item ->
-                    addCardRow(content, item.title, color) { navigate(item) }
+            if (page == null) {
+                rows.minimumHeight = dp(56) * (settings.size + 2)
+                rows.setPadding(0, 0, 0, 0)
+                cardTitle.text = getString(R.string.profile_settings)
+                addCardRow(content, "阅读背景", color) { openProfilePage(ReadingBackgroundActivity::class.java) }
+                addCardRow(content, "翻页方式", color) { navigate(ProfileSettingsPage.TURN) }
+                settings.forEach { (destination, item) ->
+                    addCardRow(content, item.title, color) { navigate(destination) }
                 }
+                return
+            }
+
+            rows.minimumHeight = 0
+            rows.setPadding(dp(14), dp(4), dp(14), dp(6))
+            if (page == ProfileSettingsPage.TURN) {
+                cardTitle.text = "翻页方式"
+                rows.addView(readerTurnOptions(ReaderPrefs.THEME_PURE_WHITE, backdrop) {},
+                    LinearLayout.LayoutParams(-1, -2))
             } else {
-                var selected = setting.selected()
-                setting.choices.forEachIndexed { index, label ->
-                    addCardRow(content, label, color, selected = index == selected) { row ->
-                        if (transitioning) return@addCardRow
-                        if (index != selected) {
-                            setting.choices.getOrNull(selected)?.let { previous ->
-                                setCardRowSelection(rows.getChildAt(selected), previous, false)
-                            }
-                            setCardRowSelection(row, label, true)
-                            selected = index
-                            setting.apply(index)
-                        }
-                        row.animate().cancel()
-                        row.scaleX = 0.96f
-                        row.scaleY = 0.94f
-                        row.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
-                    }
-                }
+                val setting = settings.getValue(page)
+                cardTitle.text = setting.title
+                rows.addView(readerSegments(setting.choices, setting.selected(), ReaderPrefs.THEME_PURE_WHITE,
+                    backdrop, setting.title, vertical = true, onSelect = setting.apply),
+                    LinearLayout.LayoutParams(-1, dp(48) * setting.choices.size + dp(4)))
             }
         }
 
@@ -650,7 +646,7 @@ class MainActivity : AppCompatActivity() {
         dialog.onBackPressedDispatcher.addCallback(dialog) { goBack() }
         dialog.setCanceledOnTouchOutside(true)
         render(null)
-        showCard(dialog, content, R.style.SettingsCardAnimation)
+        showCard(dialog, content, widthDp = 345)
     }
 
     private fun openFolder(group: BookGroup) {

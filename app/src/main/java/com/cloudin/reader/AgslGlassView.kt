@@ -192,7 +192,7 @@ open class AgslGlassView @JvmOverloads constructor(
             s.setFloatUniform("refractionHeight", if (frosted) 0f else refractionHeight)
             s.setFloatUniform("refractionAmount", if (frosted) 0f else refractionAmount)
             s.setFloatUniform("refractionAxis", floatArrayOf(1f, 0.72f))
-            s.setFloatUniform("isDark", 0f)
+            s.setFloatUniform("isDark", if (androidx.core.graphics.ColorUtils.calculateLuminance(tintColor) < 0.22) 1f else 0f)
             s.setFloatUniform("lr", 0.5f)
             s.setFloatUniform("ld", 0.10f)
             s.setFloatUniform("dr", 0.55f)

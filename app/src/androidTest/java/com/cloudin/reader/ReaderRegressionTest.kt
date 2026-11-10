@@ -312,4 +312,27 @@ class ReaderRegressionTest {
         @Suppress("UNCHECKED_CAST") val pages = pagesField.get(view) as List<IntRange>
         assertTrue(offset in pages[view.pageIndex()])
     }
+
+    @Test fun scrollAndColumnChangesPreserveReadingAnchorAcrossResize() = onMain {
+        val view = view()
+        val doc = longDocument()
+        view.setDocument(doc, 0)
+        val anchor = doc.text.length / 3
+        view.seekToOffset(anchor)
+        view.setDoubleColumns(true)
+        assertEquals(anchor, view.currentOffset())
+        view.setTurnMode(ReaderPrefs.MODE_VERTICAL)
+        assertEquals(anchor, view.currentOffset())
+        view.setTurnMode(ReaderPrefs.MODE_SCROLL)
+        assertEquals(anchor, view.currentOffset())
+        view.advanceScroll(480f)
+        val scrolled = view.currentOffset()
+        assertTrue(scrolled > anchor)
+        view.layout(0, 0, 1000, 800)
+        assertEquals(scrolled, view.currentOffset())
+        view.setDoubleColumns(false)
+        assertEquals(scrolled, view.currentOffset())
+        view.setTurnMode(ReaderPrefs.MODE_CURL)
+        assertEquals(scrolled, view.currentOffset())
+    }
 }

@@ -25,13 +25,13 @@ import android.util.LruCache
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.VelocityTracker
 import android.view.animation.DecelerateInterpolator
 import kotlin.math.abs
-import kotlin.math.min
 
 /**
  * 分页阅读视图：排版、翻页动画、页眉页脚。
- * 翻页动画支持：无、平移、仿真、淡入。
+ * 分页和连续滚动共享排版，阅读位置按文字偏移记录。
  */
 class PageView @JvmOverloads constructor(
     context: Context,
@@ -42,6 +42,7 @@ class PageView @JvmOverloads constructor(
     var onCenterTap: (() -> Unit)? = null
     var onPageChanged: ((pageIndex: Int, pageCount: Int, progress: Float) -> Unit)? = null
     var onChapterChanged: ((String) -> Unit)? = null
+    var onImageTap: ((ReadingImage) -> Unit)? = null
 
     private var document: Document? = null
     private var pageText: CharSequence = ""
@@ -50,7 +51,8 @@ class PageView @JvmOverloads constructor(
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var padH = 20f * dp
     private val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    private val padTop = (if (landscape) 18f else 48f) * dp
+    private var topInset = 0
+    private val padTop get() = maxOf((if (landscape) 34f else 48f) * dp, topInset + 23f * dp)
     private var bottomInset = 0
     private val padBottom get() = 36f * dp + bottomInset
 
@@ -58,9 +60,6 @@ class PageView @JvmOverloads constructor(
         typeface = Typeface.create("serif", Typeface.NORMAL)
         isSubpixelText = true
         textSize = 19f * resources.displayMetrics.scaledDensity
-    }
-    private val headPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 11f * resources.displayMetrics.scaledDensity
     }
     private val footPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 10.5f * resources.displayMetrics.scaledDensity
@@ -72,6 +71,20 @@ class PageView @JvmOverloads constructor(
     private var pages: List<IntRange> = emptyList()
     private var pageIndex = 0
     private var pendingOffset = 0
+    private var anchorOffset = 0
+    private var columns = 1
+    private val gap get() = 24f * dp
+    private val columnWidth get() = ((width - padH * 2 - (columns - 1) * gap) / columns).toInt()
+    private val viewportHeight get() = (height - padTop - padBottom).coerceAtLeast(1f)
+    private var withinBlock = 0f
+    private var lastScrollY = 0f
+    private var scrollDragging = false
+    private var velocity: VelocityTracker? = null
+    private var scrollFling: ValueAnimator? = null
+    private var showFooter = true
+    private var showChapter = true
+    private var chromeVisible = false
+    private var scrollLimit: Pair<Int, Float>? = null
     private val layoutCache = LruCache<Int, StaticLayout>(4)
     private var lineMultiplier = PageBreaker.LINE_MULTIPLIER
 
@@ -79,8 +92,6 @@ class PageView @JvmOverloads constructor(
     private var turnMode = ReaderPrefs.MODE_CURL
     internal val usesCurl get() = turnMode == ReaderPrefs.MODE_CURL
 
-    private var bgColor = ReaderPrefs.background(theme)
-    private var inkColor = ReaderPrefs.ink(theme)
     private var softColor = ReaderPrefs.softInk(theme)
 
     private var animating = false
@@ -103,18 +114,56 @@ class PageView @JvmOverloads constructor(
     }
 
     fun setTheme(newTheme: Int) {
+        if (theme != newTheme) paperBitmap = null
         theme = newTheme
-        bgColor = ReaderPrefs.background(theme)
-        inkColor = ReaderPrefs.ink(theme)
         softColor = ReaderPrefs.softInk(theme)
-        bodyPaint.color = inkColor
-        bgPaint.color = bgColor
+        bodyPaint.color = ReaderPrefs.ink(theme)
+        bgPaint.color = ReaderPrefs.background(theme)
         layoutCache.evictAll()
         invalidate()
     }
 
     fun setTurnMode(mode: Int) {
+        if (turnMode == mode) return
+        val offset = currentOffset()
+        stopMotion()
         turnMode = mode
+        seekToOffset(offset)
+        invalidate()
+    }
+
+    fun setDoubleColumns(enabled: Boolean) {
+        val count = if (enabled) 2 else 1
+        if (count == columns) return
+        val offset = currentOffset()
+        columns = count
+        repaginate(offset)
+    }
+
+    fun setShowFooter(show: Boolean) {
+        showFooter = show
+        invalidate()
+    }
+
+    fun setShowChapter(show: Boolean) {
+        showChapter = show
+        invalidate()
+    }
+
+    fun setChromeVisible(visible: Boolean) {
+        chromeVisible = visible
+        invalidate()
+    }
+
+    fun setFontFamily(family: String) {
+        bodyPaint.typeface = Typeface.create(family, Typeface.NORMAL)
+        repaginate()
+    }
+
+    fun setTopInset(inset: Int) {
+        if (topInset == inset) return
+        topInset = inset
+        repaginate()
     }
 
     fun setBottomInset(inset: Int) {
@@ -137,8 +186,9 @@ class PageView @JvmOverloads constructor(
 
     private fun dpScale(v: Float): Float = v * dp
 
-    private fun repaginate() {
-        pendingOffset = currentOffset()
+    private fun repaginate(offset: Int = currentOffset()) {
+        stopMotion()
+        pendingOffset = offset
         layoutCache.evictAll()
         if (width > 0 && height > 0) paginate()
         invalidate()
@@ -146,27 +196,21 @@ class PageView @JvmOverloads constructor(
 
     fun setFontSize(sizeSp: Float) {
         bodyPaint.textSize = sizeSp * resources.displayMetrics.scaledDensity
-        val keep = currentOffset()
-        pendingOffset = keep
-        layoutCache.evictAll()
-        if (width > 0 && height > 0) paginate()
-        invalidate()
+        repaginate()
     }
 
     fun setDocument(doc: Document, startOffset: Int) {
+        stopMotion()
         document = doc
         pendingOffset = startOffset
+        anchorOffset = startOffset
         pageIndex = 0
         layoutCache.evictAll()
         if (width > 0 && height > 0) paginate()
         invalidate()
     }
 
-    fun currentOffset(): Int {
-        val d = document ?: return 0
-        val p = pages.getOrNull(pageIndex) ?: return 0
-        return min(p.first, d.text.length)
-    }
+    fun currentOffset(): Int = anchorOffset
 
     fun seekToOffset(offset: Int) {
         val d = document ?: return
@@ -174,25 +218,55 @@ class PageView @JvmOverloads constructor(
             pendingOffset = offset
             return
         }
+        stopMotion()
         val target = offset.coerceIn(0, maxOf(0, d.text.length - 1))
-        val idx = pages.indexOfLast { it.first <= target }
-        if (idx >= 0 && idx != pageIndex) {
-            pageIndex = idx
-            invalidate()
-            notifyChanged()
-            pendingOffset = currentOffset()
+        val idx = pages.indexOfLast { it.first <= target }.coerceAtLeast(0)
+        pageIndex = idx / columns * columns
+        anchorOffset = target
+        withinBlock = 0f
+        if (turnMode == ReaderPrefs.MODE_SCROLL) {
+            val range = pages[idx]
+            val layout = layoutFor(idx, range)
+            if (layout != null) {
+                val line = layout.getLineForOffset((target - range.first).coerceIn(0, layout.text.length))
+                withinBlock = layout.getLineTop(line).toFloat()
+            }
+            clampScrollEnd()
         }
+        pendingOffset = target
+        invalidate()
+        notifyChanged()
     }
 
-    fun nextPage(y: Float = height / 2f) = turn(1, y)
-    fun prevPage(y: Float = height / 2f) = turn(-1, y)
-    fun pageCount(): Int = pages.size
-    fun pageIndex(): Int = pageIndex
+    fun nextPage(y: Float = height / 2f) { if (turnMode == ReaderPrefs.MODE_SCROLL) advanceScroll(viewportHeight) else turn(1, y) }
+    fun prevPage(y: Float = height / 2f) { if (turnMode == ReaderPrefs.MODE_SCROLL) advanceScroll(-viewportHeight) else turn(-1, y) }
+    fun pageCount(): Int = (pages.size + columns - 1) / columns
+    fun pageIndex(): Int = pageIndex / columns
+    fun isAtEnd(): Boolean = pages.isNotEmpty() && if (turnMode == ReaderPrefs.MODE_SCROLL) {
+        val (index, shift) = scrollEnd()
+        pageIndex >= index && (pageIndex > index || withinBlock >= shift - 0.5f)
+    } else pageIndex + columns >= pages.size
+
+    private fun stopMotion() {
+        animator?.removeAllListeners()
+        animator?.cancel()
+        scrollFling?.cancel()
+        animating = false
+        dragActive = false
+        animProgress = 0f
+    }
+
+    override fun onDetachedFromWindow() {
+        stopMotion()
+        velocity?.recycle()
+        velocity = null
+        super.onDetachedFromWindow()
+    }
 
     private fun turn(delta: Int, y: Float = touchDownY) {
         if (document == null) return
         if (pages.isEmpty() || animating) return
-        val target = pageIndex + delta
+        val target = pageIndex + delta * columns
         if (target !in pages.indices) return
 
         if (turnMode == ReaderPrefs.MODE_NONE || pages.size <= 1) {
@@ -210,11 +284,7 @@ class PageView @JvmOverloads constructor(
         }
         animator?.cancel()
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = when (turnMode) {
-                ReaderPrefs.MODE_FADE -> 220L
-                ReaderPrefs.MODE_SLIDE -> 260L
-                else -> 340L
-            }
+            duration = 260L
             interpolator = DecelerateInterpolator()
             addUpdateListener {
                 animProgress = it.animatedValue as Float
@@ -232,6 +302,7 @@ class PageView @JvmOverloads constructor(
 
     private fun applyPage(index: Int) {
         pageIndex = index.coerceIn(0, maxOf(0, pages.size - 1))
+        anchorOffset = pages.getOrNull(pageIndex)?.first ?: 0
         animating = false
         animProgress = 0f
         invalidate()
@@ -241,16 +312,16 @@ class PageView @JvmOverloads constructor(
 
     private fun notifyChanged() {
         val d = document ?: return
-        val p = pages.getOrNull(pageIndex) ?: return
-        val progress = progressAt(pageIndex)
-        onPageChanged?.invoke(pageIndex, pages.size, progress)
-        onChapterChanged?.invoke(d.chapterAt(p.first))
+        if (pages.isEmpty()) return
+        val progress = if (isAtEnd()) 1f else anchorOffset.toFloat() / d.text.length
+        onPageChanged?.invoke(pageIndex(), pageCount(), progress)
+        onChapterChanged?.invoke(d.chapterAt(anchorOffset))
     }
 
     private fun progressAt(index: Int): Float {
         val d = document ?: return 0f
         val page = pages.getOrNull(index) ?: return 0f
-        return if (index == pages.lastIndex) 1f else page.first.toFloat() / d.text.length
+        return if (index + columns >= pages.size) 1f else page.first.toFloat() / d.text.length
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -260,8 +331,8 @@ class PageView @JvmOverloads constructor(
 
     private fun paginate() {
         val d = document ?: return
-        val w = (width - padH * 2).toInt()
-        val h = (height - padTop - padBottom).toInt()
+        val w = columnWidth
+        val h = viewportHeight.toInt()
         if (w <= 0 || h <= 0) return
         pageText = if (d.images.isEmpty()) d.text else SpannableString(d.text).apply {
             d.images.forEach { image ->
@@ -270,15 +341,14 @@ class PageView @JvmOverloads constructor(
             }
         }
         pages = PageBreaker.breakPages(pageText, bodyPaint, w, h, lineMultiplier)
+        scrollLimit = null
         layoutCache.evictAll()
         if (pages.isEmpty()) return
-        val target = pendingOffset.coerceIn(0, d.text.length)
-        val idx = pages.indexOfLast { it.first <= target }
-        pageIndex = if (idx < 0) 0 else idx
-        notifyChanged()
+        seekToOffset(pendingOffset)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (turnMode == ReaderPrefs.MODE_SCROLL) return onScrollTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 touchDownX = event.x
@@ -300,14 +370,17 @@ class PageView @JvmOverloads constructor(
                         }
                         return true
                     }
-                    val horizontal = if (turnMode == ReaderPrefs.MODE_CURL) {
+                    val vertical = turnMode == ReaderPrefs.MODE_VERTICAL
+                    val canTurn = if (vertical) {
+                        abs(dy) > touchSlop && abs(dy) > abs(dx)
+                    } else if (turnMode == ReaderPrefs.MODE_CURL) {
                         abs(dx) > touchSlop && abs(dx) > abs(dy) * 0.65f
                     } else {
                         abs(dx) > 16f * dp && abs(dy) < 90f * dp
                     }
-                    if (horizontal) {
-                        val dir = if (dx < 0) 1 else -1
-                        val target = pageIndex + dir
+                    if (canTurn) {
+                        val dir = if ((if (vertical) dy else dx) < 0) 1 else -1
+                        val target = pageIndex + dir * columns
                         if (target in pages.indices) {
                             dragActive = true
                             animTarget = target
@@ -329,22 +402,17 @@ class PageView @JvmOverloads constructor(
                     dragActive = false
                     val dt2 = event.eventTime - touchDownTime
                     updateDrag(event.x, event.y)
-                    val travel = dragTravel(event.x)
+                    val travel = dragTravel(event.x, event.y)
                     // 快速滑动（甩动）即使距离不够也完成翻页
                     val flung = travel > 56f * dp && dt2 < 280
-                    settleDrag(travel > width * 0.32f || flung)
+                    settleDrag(travel > turnDistance() * 0.32f || flung)
                     return true
                 }
                 val dx = event.x - touchDownX
                 val dy = event.y - touchDownY
                 val dt = event.eventTime - touchDownTime
                 if (abs(dx) < 12f * dp && abs(dy) < 12f * dp && dt < 450) {
-                    val w = width.toFloat()
-                    when {
-                        event.x < w * 0.32f -> turn(-1)
-                        event.x > w * 0.68f -> turn(1)
-                        else -> onCenterTap?.invoke()
-                    }
+                    handleTap(event.x, event.y)
                 }
                 return true
             }
@@ -354,6 +422,146 @@ class PageView @JvmOverloads constructor(
                     settleDrag(false)
                 }
                 return true
+            }
+        }
+        return true
+    }
+
+    private fun handleTap(x: Float, y: Float) {
+        if (animating) return
+        val image = imageAt(x, y)
+        if (image != null && onImageTap != null) {
+            onImageTap?.invoke(image)
+            return
+        }
+        when {
+            x < width * 0.32f -> prevPage(y)
+            x > width * 0.68f -> nextPage(y)
+            else -> onCenterTap?.invoke()
+        }
+    }
+
+    private fun imageAt(x: Float, y: Float): ReadingImage? {
+        val images = document?.images ?: return null
+        if (images.isEmpty() || y !in padTop..(padTop + viewportHeight)) return null
+        val column = ((x - padH) / (columnWidth + gap)).toInt().coerceIn(0, columns - 1)
+        val localX = x - padH - column * (columnWidth + gap)
+        if (localX !in 0f..columnWidth.toFloat()) return null
+        var index = pageIndex
+        var localY = y - padTop + withinBlock
+        while (turnMode == ReaderPrefs.MODE_SCROLL && index + columns < pages.size && localY >= blockHeight(index)) {
+            localY -= blockHeight(index)
+            index += columns
+        }
+        val range = pages.getOrNull(index + column) ?: return null
+        val layout = layoutFor(index + column, range) ?: return null
+        if (localY !in 0f..layout.height.toFloat()) return null
+        val line = layout.getLineForVertical(localY.toInt())
+        val start = range.first + layout.getLineStart(line)
+        val end = range.first + layout.getLineEnd(line)
+        val candidate = images.binarySearchBy(start) { it.offset }.let { if (it < 0) -it - 1 else it }
+        val image = images.getOrNull(candidate)?.takeIf { it.offset < end } ?: return null
+        val span = (pageText as? Spanned)?.getSpans(image.offset, image.offset + 1, ReaderImageSpan::class.java)?.firstOrNull()
+        return image.asset.takeIf {
+            span?.contains(localX - layout.getLineLeft(line), localY, layout.getLineBaseline(line)) == true
+        }
+    }
+
+    private fun blockHeight(index: Int): Float {
+        var block = 1
+        for (column in 0 until columns) {
+            val range = pages.getOrNull(index + column) ?: break
+            block = maxOf(block, layoutFor(index + column, range)?.height ?: 1)
+        }
+        return block.toFloat()
+    }
+
+    private fun scrollEnd(): Pair<Int, Float> {
+        scrollLimit?.let { return it }
+        var index = (pages.lastIndex / columns) * columns
+        var shift = blockHeight(index) - viewportHeight
+        while (shift < 0 && index > 0) {
+            index -= columns
+            shift += blockHeight(index)
+        }
+        return (index to shift.coerceAtLeast(0f)).also { scrollLimit = it }
+    }
+
+    private fun clampScrollEnd() {
+        val (endIndex, endShift) = scrollEnd()
+        if (pageIndex > endIndex || (pageIndex == endIndex && withinBlock > endShift)) {
+            pageIndex = endIndex
+            withinBlock = endShift
+        }
+    }
+
+    fun advanceScroll(distance: Float) {
+        if (turnMode != ReaderPrefs.MODE_SCROLL || pages.isEmpty()) return
+        withinBlock += distance
+        while (withinBlock < 0f && pageIndex > 0) {
+            pageIndex -= columns
+            withinBlock += blockHeight(pageIndex)
+        }
+        withinBlock = withinBlock.coerceAtLeast(0f)
+        while (pageIndex + columns < pages.size && withinBlock >= blockHeight(pageIndex)) {
+            withinBlock -= blockHeight(pageIndex)
+            pageIndex += columns
+        }
+        clampScrollEnd()
+        val range = pages[pageIndex]
+        val layout = layoutFor(pageIndex, range)
+        val line = layout?.getLineForVertical(withinBlock.toInt()) ?: 0
+        anchorOffset = range.first + (layout?.getLineStart(line) ?: 0)
+        pendingOffset = anchorOffset
+        invalidate()
+        notifyChanged()
+    }
+
+    private fun onScrollTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                scrollFling?.cancel()
+                velocity?.recycle()
+                velocity = VelocityTracker.obtain().apply { addMovement(event) }
+                touchDownX = event.x
+                touchDownY = event.y
+                lastScrollY = event.y
+                scrollDragging = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                velocity?.addMovement(event)
+                if (scrollDragging || abs(event.y - touchDownY) > touchSlop) {
+                    scrollDragging = true
+                    advanceScroll(lastScrollY - event.y)
+                    lastScrollY = event.y
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    if (scrollDragging) {
+                        velocity?.addMovement(event)
+                        velocity?.computeCurrentVelocity(1000, 6000f)
+                        val speed = -(velocity?.yVelocity ?: 0f)
+                        if (abs(speed) > 200f) {
+                            var previous = 0f
+                            scrollFling = ValueAnimator.ofFloat(0f, speed * 0.22f).apply {
+                                duration = 420L
+                                interpolator = DecelerateInterpolator()
+                                addUpdateListener {
+                                    val value = it.animatedValue as Float
+                                    advanceScroll(value - previous)
+                                    previous = value
+                                }
+                                start()
+                            }
+                        }
+                    } else if (abs(event.x - touchDownX) <= touchSlop) {
+                        handleTap(event.x, event.y)
+                    }
+                }
+                velocity?.recycle()
+                velocity = null
+                scrollDragging = false
             }
         }
         return true
@@ -371,10 +579,11 @@ class PageView @JvmOverloads constructor(
 
     private fun curlEdgeX(): Float = if (animTarget > pageIndex) width.toFloat() else 0f
 
-    private fun dragTravel(x: Float): Float {
-        val dx = x - touchDownX
-        return if (turnMode != ReaderPrefs.MODE_CURL) abs(dx)
-        else if (animTarget > pageIndex) -dx else dx
+    private fun turnDistance() = if (turnMode == ReaderPrefs.MODE_VERTICAL) height else width
+
+    private fun dragTravel(x: Float, y: Float): Float {
+        val distance = if (turnMode == ReaderPrefs.MODE_VERTICAL) y - touchDownY else x - touchDownX
+        return if (animTarget > pageIndex) -distance else distance
     }
 
     private fun updateDrag(x: Float, y: Float) {
@@ -382,7 +591,7 @@ class PageView @JvmOverloads constructor(
             curlTipX = x.coerceIn(0f, width.toFloat())
             curlTipY = y.coerceIn(0f, height.toFloat())
         } else {
-            animProgress = (dragTravel(x) / width.coerceAtLeast(1)).coerceIn(0f, 1f)
+            animProgress = (dragTravel(x, y) / turnDistance().coerceAtLeast(1)).coerceIn(0f, 1f)
         }
     }
 
@@ -451,6 +660,21 @@ class PageView @JvmOverloads constructor(
         }
         drawBackground(canvas)
         if (pages.isEmpty() || document == null) return
+        if (turnMode == ReaderPrefs.MODE_SCROLL) {
+            val save = canvas.save()
+            canvas.clipRect(0f, padTop, width.toFloat(), padTop + viewportHeight)
+            var top = -withinBlock
+            var index = pageIndex
+            while (index < pages.size && top < viewportHeight) {
+                drawTextBlock(canvas, index, top)
+                top += blockHeight(index)
+                index += columns
+            }
+            canvas.restoreToCount(save)
+            drawChapter(canvas, anchorOffset, 255)
+            drawFooter(canvas, pageIndex, 255)
+            return
+        }
         if (!animating) {
             drawPage(canvas, pageIndex, 0f, 1f)
         } else {
@@ -463,22 +687,23 @@ class PageView @JvmOverloads constructor(
 
 
 
-    private fun drawPageBackdrop(canvas: Canvas, dx: Float) {
-        if (theme == ReaderPrefs.THEME_PAPER) {
+    private fun drawPageBackdrop(canvas: Canvas) {
+        val texture = ReaderPrefs.palette(theme).texture
+        if (texture != 0) {
             val bmp = paperBitmap ?: runCatching {
-                BitmapFactory.decodeResource(resources, R.drawable.paper_bg)
+                BitmapFactory.decodeResource(resources, texture)
             }.getOrNull()?.also { paperBitmap = it }
             if (bmp != null) {
                 paperBitmapPaint.alpha = 255
-                canvas.drawBitmap(bmp, null, RectF(dx, 0f, dx + width, height.toFloat()), paperBitmapPaint)
+                canvas.drawBitmap(bmp, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), paperBitmapPaint)
                 return
             }
         }
-        canvas.drawRect(dx, 0f, dx + width, height.toFloat(), bgPaint)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
     }
 
     private fun drawBackground(canvas: Canvas) {
-        drawPageBackdrop(canvas, 0f)
+        drawPageBackdrop(canvas)
     }
 
     private fun drawTransition(canvas: Canvas) {
@@ -494,9 +719,10 @@ class PageView @JvmOverloads constructor(
                 drawPage(canvas, from, -dir * p * w, 1f)
                 drawPage(canvas, to, dir * (1f - p) * w, 1f)
             }
-            ReaderPrefs.MODE_FADE -> {
-                drawPage(canvas, from, 0f, 1f - p, opaque = false)
-                drawPage(canvas, to, 0f, p, opaque = false)
+            ReaderPrefs.MODE_VERTICAL -> {
+                val dir = if (forward) 1f else -1f
+                drawPage(canvas, from, 0f, 1f, dy = -dir * p * height)
+                drawPage(canvas, to, 0f, 1f, dy = dir * (1f - p) * height)
             }
             else -> drawPage(canvas, from, 0f, 1f)
         }
@@ -528,7 +754,7 @@ class PageView @JvmOverloads constructor(
         canvas.clipPath(curl.paperBack)
         val reflected = canvas.save()
         canvas.concat(curl.reflection)
-        drawPageBackdrop(canvas, 0f)
+        drawPageBackdrop(canvas)
         drawPage(canvas, pageIndex, 0f, 0.13f, opaque = false)
         canvas.restoreToCount(reflected)
         // The paper catches light on the bend and darkens on the reverse side.
@@ -549,33 +775,54 @@ class PageView @JvmOverloads constructor(
         foldPaint.shader = null
     }
 
-    private fun drawPage(canvas: Canvas, index: Int, dx: Float, alpha: Float, opaque: Boolean = true) {
-        val d = document ?: return
-        val range = pages.getOrNull(index) ?: return
-        val layout = layoutFor(index, range) ?: return
+    private fun drawPage(canvas: Canvas, index: Int, dx: Float, alpha: Float, opaque: Boolean = true, dy: Float = 0f) {
         val a = (alpha.coerceIn(0f, 1f) * 255).toInt()
-
-        if (opaque) {
-            drawPageBackdrop(canvas, dx)
-        }
-
+        val save = canvas.save()
+        canvas.translate(dx, dy)
+        if (opaque) drawPageBackdrop(canvas)
         bodyPaint.alpha = a
-        canvas.save()
-        canvas.translate(padH + dx, padTop)
-        layout.draw(canvas)
-        canvas.restore()
+        drawTextBlock(canvas, index, 0f)
+        drawChapter(canvas, pages.getOrNull(index)?.first ?: 0, a)
+        drawFooter(canvas, index, a)
+        bodyPaint.alpha = 255
+        canvas.restoreToCount(save)
+    }
 
+    private fun drawTextBlock(canvas: Canvas, index: Int, y: Float) {
+        for (column in 0 until columns) {
+            val range = pages.getOrNull(index + column) ?: break
+            val layout = layoutFor(index + column, range) ?: continue
+            val save = canvas.save()
+            canvas.translate(padH + column * (columnWidth + gap), padTop + y)
+            layout.draw(canvas)
+            canvas.restoreToCount(save)
+        }
+    }
+
+    private fun drawChapter(canvas: Canvas, offset: Int, alpha: Int) {
+        if (!showChapter || chromeVisible) return
+        val title = document?.chapterAt(offset).orEmpty()
+        if (title.isEmpty()) return
+        footPaint.color = softColor
+        footPaint.alpha = alpha
+        val count = footPaint.breakText(title, true, (width - padH * 2).coerceAtLeast(1f), null)
+        canvas.drawText(title, 0, count, padH, padTop - 8f * dp, footPaint)
+        footPaint.alpha = 255
+    }
+
+    private fun drawFooter(canvas: Canvas, index: Int, a: Int) {
+        if (!showFooter) return
         footPaint.color = softColor
         footPaint.alpha = a
-        val progress = (progressAt(index) * 100).toInt()
+        val progress = if (turnMode == ReaderPrefs.MODE_SCROLL) {
+            if (isAtEnd()) 100 else (100f * anchorOffset / (document?.text?.length ?: 1).coerceAtLeast(1)).toInt()
+        } else (progressAt(index) * 100).toInt()
         val right = "$progress%"
-        canvas.drawText(right, width - padH - footPaint.measureText(right) + dx, height - bottomInset - 12f * dp, footPaint)
-        val pageLabel = "${index + 1}/${pages.size}"
-        canvas.drawText(pageLabel, padH + dx, height - bottomInset - 12f * dp, footPaint)
+        canvas.drawText(right, width - padH - footPaint.measureText(right), height - bottomInset - 12f * dp, footPaint)
+        val pageLabel = "${index / columns + 1}/${pageCount()}"
+        canvas.drawText(pageLabel, padH, height - bottomInset - 12f * dp, footPaint)
 
-        headPaint.alpha = 255
         footPaint.alpha = 255
-        bodyPaint.alpha = 255
     }
 
     @SuppressLint("WrongConstant")
@@ -585,7 +832,7 @@ class PageView @JvmOverloads constructor(
         val content = pageText.subSequence(range.first, (range.last + 1).coerceAtMost(pageText.length))
         if (content.isEmpty()) return null
         val layout = StaticLayout.Builder
-            .obtain(content, 0, content.length, bodyPaint, (width - padH * 2).toInt())
+            .obtain(content, 0, content.length, bodyPaint, columnWidth)
             .setLineSpacing(0f, lineMultiplier)
             .setIncludePad(false)
             .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)

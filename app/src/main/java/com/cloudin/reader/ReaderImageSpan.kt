@@ -23,6 +23,11 @@ internal class ReaderImageSpan(
     private val bounds = RectF()
     private val clip = Rect()
 
+    fun contains(x: Float, y: Float, baseline: Int): Boolean {
+        val left = (lineWidth - imageWidth) / 2f
+        return x in left..(left + imageWidth) && y in (baseline - imageHeight).toFloat()..baseline.toFloat()
+    }
+
     init {
         // 分页时就预解码，避免第一帧在 draw 里做磁盘 IO
         CoverThumbnailLoader.load(key) { onReady() }

@@ -1,7 +1,6 @@
 package com.cloudin.reader
 
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -10,7 +9,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -53,18 +51,14 @@ class ReadingHistoryActivity : AppCompatActivity() {
             isAppearanceLightStatusBars = true
             isAppearanceLightNavigationBars = true
         }
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(paper) }
+        val backdrop = View(this).apply { setBackgroundColor(paper) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        val back = ImageButton(this).apply {
-            contentDescription = "返回"
-            setImageResource(R.drawable.ic_back)
-            imageTintList = ColorStateList.valueOf(ink)
-            val attr = android.util.TypedValue()
-            theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, attr, true)
-            setBackgroundResource(attr.resourceId)
-            setOnClickListener { finish() }
-        }
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val back = glassBackButton(ink, backdrop, paper) { finish() }
+        toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+            marginStart = dp(10)
+            marginEnd = dp(8)
+        })
         toolbar.addView(label(getString(R.string.history_title), 17f, ink).apply {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
@@ -103,7 +97,10 @@ class ReadingHistoryActivity : AppCompatActivity() {
         empty = label("", 14f, muted).apply { gravity = Gravity.CENTER }
         body.addView(empty, FrameLayout.LayoutParams(-1, -1))
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        setContentView(FrameLayout(this).apply {
+            addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+            addView(root, FrameLayout.LayoutParams(-1, -1))
+        })
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)

@@ -38,12 +38,9 @@
 
         <com.cloudin.reader.GlassActionButton
             android:id="@+id/btnBack"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:gravity="center"
-            android:text="&#8249;"
-            android:textColor="@color/shelf_title"
-            android:textSize="24sp"
             android:visibility="gone" />
 
         <TextView

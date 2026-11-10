@@ -27,7 +27,8 @@ data class Book(
     var hash: String? = null,    // SHA-256 of the source file, used for de-duplication
     var favorite: Boolean = false,
     var groupId: String? = null,
-    var pinned: Boolean = false
+    var pinned: Boolean = false,
+    var readingOffset: Int? = null
 )
 
 sealed class ImportResult {
@@ -84,7 +85,8 @@ object BookStore {
                         hash = if (o.isNull("hash")) null else o.getString("hash"),
                         favorite = o.optBoolean("favorite", false),
                         pinned = o.optBoolean("pinned", false),
-                        groupId = if (o.isNull("groupId")) null else o.getString("groupId")
+                        groupId = if (o.isNull("groupId")) null else o.getString("groupId"),
+                        readingOffset = o.optInt("readingOffset", -1).takeIf { it >= 0 }
                     )
                 )
             }
@@ -112,6 +114,7 @@ object BookStore {
                 put("favorite", b.favorite)
                 put("pinned", b.pinned)
                 put("groupId", b.groupId)
+                put("readingOffset", b.readingOffset)
             })
         }
         val atomic = AtomicFile(libraryFile(context))
@@ -156,10 +159,11 @@ object BookStore {
     }
 
     @Synchronized
-    fun updateProgress(context: Context, bookId: String, progress: Float) {
+    fun updateProgress(context: Context, bookId: String, progress: Float, offset: Int? = null) {
         val list = load(context)
         val b = list.firstOrNull { it.id == bookId } ?: return
         b.progress = progress.coerceIn(0f, 1f)
+        b.readingOffset = offset
         b.lastRead = System.currentTimeMillis()
         save(context, list)
     }

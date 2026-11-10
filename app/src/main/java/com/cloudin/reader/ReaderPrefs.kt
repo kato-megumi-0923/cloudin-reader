@@ -8,13 +8,42 @@ object ReaderPrefs {
     const val THEME_WHITE = 1
     const val THEME_NIGHT = 2
     const val THEME_GREEN = 3
+    const val THEME_BLACK = 4
+    const val THEME_WOOD = 5
+    const val THEME_PLUM = 6
+    const val THEME_LINEN = 7
+    const val THEME_PURE_WHITE = 8
+    const val THEME_DARK_GREEN = 9
 
     const val MODE_NONE = 0
     const val MODE_SLIDE = 1
     const val MODE_CURL = 2
-    const val MODE_FADE = 3
+    const val MODE_VERTICAL = 4
+    const val MODE_SCROLL = 5
+
+    data class Theme(val id: Int, val name: String, val paper: Int, val ink: Int, val surface: Int,
+                     val texture: Int = 0, val dark: Boolean = false)
+
+    val themes = listOf(
+        Theme(THEME_PAPER, "牛皮纸", 0xFFC9B282.toInt(), 0xFF302303.toInt(), 0xFFCCB992.toInt(), R.drawable.reader_texture_kraft),
+        Theme(THEME_WHITE, "雅白", 0xFFF6F6F6.toInt(), 0xFF262626.toInt(), Color.WHITE, R.drawable.reader_texture_white),
+        Theme(THEME_NIGHT, "夜间", 0xFF1A1A1A.toInt(), 0xFFDDDDDD.toInt(), 0xFF262626.toInt(), dark = true),
+        Theme(THEME_BLACK, "雅黑", Color.BLACK, 0xFFCCCCCC.toInt(), 0xFF1A1A1A.toInt(), dark = true),
+        Theme(THEME_GREEN, "青瓷", 0xFFD2E4D2.toInt(), 0xFF132013.toInt(), 0xFFE4EFE4.toInt()),
+        Theme(THEME_WOOD, "木纹", 0xFFD2A679.toInt(), 0xFF302303.toInt(), 0xFFD5B890.toInt(), R.drawable.reader_texture_wood),
+        Theme(THEME_PLUM, "梅子", 0xFFFFE4E1.toInt(), 0xFF330500.toInt(), 0xFFFFF1F0.toInt()),
+        Theme(THEME_LINEN, "亚麻", 0xFFFAF0E6.toInt(), 0xFF302303.toInt(), 0xFFFCF7F2.toInt()),
+        Theme(THEME_PURE_WHITE, "纯白", Color.WHITE, Color.BLACK, 0xFFF6F6F6.toInt()),
+        Theme(THEME_DARK_GREEN, "墨绿", Color.BLACK, 0xFF39B991.toInt(), 0xFF01110F.toInt(), dark = true)
+    )
+
+    val turns = listOf(MODE_NONE to "无", MODE_CURL to "仿真", MODE_SLIDE to "左右",
+        MODE_VERTICAL to "上下", MODE_SCROLL to "滚屏")
+    val fonts = listOf("serif" to "衬线", "sans-serif" to "无衬线", "monospace" to "等宽")
+    fun palette(id: Int): Theme = themes.firstOrNull { it.id == id } ?: themes.first()
 
     private const val SP = "reader"
+    private fun prefs(context: Context) = context.getSharedPreferences(SP, Context.MODE_PRIVATE)
 
     fun fontSize(context: Context): Int =
         context.getSharedPreferences(SP, Context.MODE_PRIVATE).getInt("fontSize", 19)
@@ -44,65 +73,44 @@ object ReaderPrefs {
         context.getSharedPreferences(SP, Context.MODE_PRIVATE).getInt("theme", THEME_PAPER)
 
     fun setTheme(context: Context, theme: Int) {
-        context.getSharedPreferences(SP, Context.MODE_PRIVATE).edit()
-            .putInt("theme", theme).apply()
+        prefs(context).edit().apply {
+            putInt("theme", theme)
+            if (!palette(theme).dark) putInt("dayTheme", theme)
+        }.apply()
     }
 
+    fun dayTheme(context: Context): Int = prefs(context).getInt("dayTheme", THEME_PAPER)
+
     fun turnMode(context: Context): Int =
-        context.getSharedPreferences(SP, Context.MODE_PRIVATE).getInt("turnMode", MODE_CURL)
+        prefs(context).getInt("turnMode", MODE_CURL).let { saved ->
+            if (saved == 3) MODE_SLIDE else turns.firstOrNull { it.first == saved }?.first ?: MODE_CURL
+        }
 
     fun setTurnMode(context: Context, mode: Int) {
         context.getSharedPreferences(SP, Context.MODE_PRIVATE).edit()
             .putInt("turnMode", mode).apply()
     }
 
-    fun background(theme: Int): Int = when (theme) {
-        THEME_WHITE -> Color.parseColor("#FFFFFF")
-        THEME_NIGHT -> Color.parseColor("#212832")
-        THEME_GREEN -> Color.parseColor("#CCF0CF")
-        else -> Color.parseColor("#D9C7A4")
-    }
-
-    fun ink(theme: Int): Int = when (theme) {
-        THEME_WHITE -> Color.parseColor("#1A1A1A")
-        THEME_NIGHT -> Color.parseColor("#B6B6BA")
-        THEME_GREEN -> Color.parseColor("#24322A")
-        else -> Color.parseColor("#302303")
-    }
-
-    fun softInk(theme: Int): Int = when (theme) {
-        THEME_WHITE -> Color.parseColor("#8C8C8C")
-        THEME_NIGHT -> Color.parseColor("#75757A")
-        THEME_GREEN -> Color.parseColor("#6E8274")
-        else -> Color.parseColor("#7B6642")
-    }
-
-    fun chrome(theme: Int): Int = when (theme) {
-        THEME_WHITE -> Color.parseColor("#FFFFFF")
-        THEME_NIGHT -> Color.parseColor("#2A303A")
-        THEME_GREEN -> Color.parseColor("#C1E7C5")
-        else -> Color.parseColor("#E3D3B2")
-    }
-
-    fun backgroundHex(theme: Int): String = when (theme) {
-        THEME_WHITE -> "#FFFFFF"
-        THEME_NIGHT -> "#212832"
-        THEME_GREEN -> "#CCF0CF"
-        else -> "#D9C7A4"
-    }
-
-    fun inkHex(theme: Int): String = when (theme) {
-        THEME_WHITE -> "#1A1A1A"
-        THEME_NIGHT -> "#B6B6BA"
-        THEME_GREEN -> "#24322A"
-        else -> "#2B2A28"
-    }
-
-    /** 主题预览色，用于设置里的小圆点。 */
-    fun swatchColor(theme: Int): Int = when (theme) {
-        THEME_WHITE -> Color.parseColor("#FFFFFF")
-        THEME_NIGHT -> Color.parseColor("#212832")
-        THEME_GREEN -> Color.parseColor("#CCF0CF")
-        else -> Color.parseColor("#E7DCC3")
-    }
+    fun background(theme: Int): Int = palette(theme).paper
+    fun ink(theme: Int): Int = palette(theme).ink
+    fun chrome(theme: Int): Int = palette(theme).surface
+    fun softInk(theme: Int): Int = androidx.core.graphics.ColorUtils.blendARGB(ink(theme), background(theme), 0.34f)
+    fun backgroundHex(theme: Int): String = "#%06X".format(background(theme) and 0xFFFFFF)
+    fun inkHex(theme: Int): String = "#%06X".format(ink(theme) and 0xFFFFFF)
+    fun fontFamily(context: Context) = prefs(context).getString("fontFamily", fonts.first().first) ?: fonts.first().first
+    fun setFontFamily(context: Context, family: String) { prefs(context).edit().putString("fontFamily", family).apply() }
+    fun doubleColumns(context: Context) = prefs(context).getBoolean("doubleColumns", false)
+    fun setDoubleColumns(context: Context, value: Boolean) { prefs(context).edit().putBoolean("doubleColumns", value).apply() }
+    fun brightness(context: Context) = prefs(context).getInt("brightness", 60)
+    fun setBrightness(context: Context, value: Int) { prefs(context).edit().putInt("brightness", value).apply() }
+    fun followsBrightness(context: Context) = prefs(context).getBoolean("systemBrightness", true)
+    fun setFollowsBrightness(context: Context, value: Boolean) { prefs(context).edit().putBoolean("systemBrightness", value).apply() }
+    fun autoSpeed(context: Context) = prefs(context).getInt("autoSpeed", 30)
+    fun setAutoSpeed(context: Context, value: Int) { prefs(context).edit().putInt("autoSpeed", value).apply() }
+    fun showChapter(context: Context) = prefs(context).getBoolean("showChapter", true)
+    fun setShowChapter(context: Context, value: Boolean) { prefs(context).edit().putBoolean("showChapter", value).apply() }
+    fun showFooter(context: Context) = prefs(context).getBoolean("showFooter", true)
+    fun setShowFooter(context: Context, value: Boolean) { prefs(context).edit().putBoolean("showFooter", value).apply() }
+    fun volumeTurns(context: Context) = prefs(context).getBoolean("volumeTurns", false)
+    fun setVolumeTurns(context: Context, value: Boolean) { prefs(context).edit().putBoolean("volumeTurns", value).apply() }
 }

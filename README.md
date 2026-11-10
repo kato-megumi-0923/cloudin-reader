@@ -1,11 +1,13 @@
-# 云中阅读 · Cloudin Reader
+# 云中阅读
 
 > 本地 TXT / EPUB 阅读器，Liquid Glass 界面。无广告、无账号、不联网。
+>
+> *A local TXT / EPUB reader with a Liquid Glass interface. No ads, no accounts, no tracking.*
 
 ![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)
 ![AGSL](https://img.shields.io/badge/AGSL-Android%2013%2B-4B8BBE)
-![Version](https://img.shields.io/badge/version-0.2.14-9C5015)
+![Version](https://img.shields.io/badge/version-0.2.15-9C5015)
 
 一个给自己写的阅读器：书架、分页、翻页动画、阅读统计全部本地完成，界面按 iOS 26 的「液态玻璃」风格重做过一轮。
 
@@ -24,9 +26,12 @@
 ### 阅读
 
 - 自研分页引擎：`StaticLayout` 测量 + `PageBreaker` 断页，支持 EPUB 内嵌图片
-- 翻页方式：无 / 平移 / 仿真卷页 / 淡入
-- 阅读背景：纸张 / 白色 / 夜间 / 护眼绿
-- 字体、字号、行距、边距、对齐方式可调，设置面板即改即生效
+- 排版：单列 / 双列，字号、行距、边距、对齐、字体族可调
+- 翻页方式：无 / 仿真卷页 / 左右 / 上下 / 滚屏
+- 阅读背景：10 种纸张（牛皮纸、雅白、夜间、雅黑、青瓷、木纹、梅子、亚麻、纯白、墨绿），带纹理预览页，可全局切换
+- 自动阅读、音量键翻页、亮度调节（可跟随系统）
+- 章节标题与底部进度可单独开关，进度按字符偏移精确恢复
+- EPUB 插图点击可全屏查看、缩放、保存到相册
 - 章节目录、进度条、百分比、剩余阅读时间
 - 阅读时长统计与阅读记录
 
@@ -140,6 +145,7 @@ app/src/main/java/com/cloudin/reader/
 
 | 版本 | 主要变化 |
 |---|---|
+| 0.2.15 | 阅读背景扩展到 10 种纸张并新增背景预览页；排版支持双列、上下/滚屏翻页；自动阅读、音量键翻页、亮度调节；EPUB 插图全屏查看与保存；进度按字符偏移精确恢复 |
 | 0.2.14 | 新增局域网传书；阅读进度并入设置面板；EPUB 解析加固 |
 | 0.2.13 | 重写书架底栏（自研光学透镜）；新增玻璃按钮；书架页头沉浸化 |
 | 0.2.12 | 底栏长按浮起透镜，轻点直接切换 |

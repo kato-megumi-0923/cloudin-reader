@@ -11,7 +11,6 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -43,6 +42,7 @@ class ReadingStatsActivity : AppCompatActivity() {
     private val dateLabel = DateTimeFormatter.ofPattern("M.d")
     private var page = Page.OVERVIEW
     private lateinit var root: LinearLayout
+    private lateinit var backdrop: View
     private lateinit var header: TextView
     private lateinit var scroll: ScrollView
 
@@ -59,24 +59,23 @@ class ReadingStatsActivity : AppCompatActivity() {
             isAppearanceLightNavigationBars = true
         }
         root = column()
+        backdrop = View(this).apply { setBackgroundColor(warm) }
         val toolbar = row().apply { gravity = Gravity.CENTER_VERTICAL }
-        val back = ImageButton(this).apply {
-            contentDescription = "返回"
-            setImageResource(R.drawable.ic_back)
-            imageTintList = ColorStateList.valueOf(ink)
-            val attr = android.util.TypedValue()
-            theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, attr, true)
-            setBackgroundResource(attr.resourceId)
-            setOnClickListener { onBackPressedDispatcher.onBackPressed() }
-        }
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val back = glassBackButton(ink, backdrop, paper) { onBackPressedDispatcher.onBackPressed() }
+        toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+            marginStart = dp(10)
+            marginEnd = dp(8)
+        })
         header = label("", 17f, ink).apply { setTypeface(typeface, Typeface.BOLD) }
         toolbar.addView(header)
         root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(52)))
         root.addView(View(this).apply { setBackgroundColor(stroke) }, LinearLayout.LayoutParams(-1, dp(1)))
         scroll = ScrollView(this).apply { isFillViewport = true }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root)
+        setContentView(FrameLayout(this).apply {
+            addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+            addView(root, FrameLayout.LayoutParams(-1, -1))
+        })
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -110,7 +109,7 @@ class ReadingStatsActivity : AppCompatActivity() {
         val timeline = ReadingStats.read(this)
         val today = LocalDate.now()
         header.text = page.title
-        root.setBackgroundColor(if (page == Page.OVERVIEW) warm else paper)
+        backdrop.setBackgroundColor(if (page == Page.OVERVIEW) warm else paper)
         scroll.removeAllViews()
         val content = when (page) {
             Page.OVERVIEW -> overview(timeline, today)

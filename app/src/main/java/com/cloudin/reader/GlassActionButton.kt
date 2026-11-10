@@ -3,6 +3,7 @@ package com.cloudin.reader
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Color
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.util.TypedValue
@@ -10,6 +11,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.LinearInterpolator
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import kotlin.math.sin
 
@@ -53,6 +56,26 @@ class GlassActionButton @JvmOverloads constructor(
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
+
+internal fun GlassActionButton.useBackIcon(color: Int) {
+    contentDescription = context.getString(R.string.settings_back)
+    textView.visibility = View.GONE
+    addView(ImageView(context).apply {
+        setImageResource(R.drawable.ic_back)
+        setColorFilter(color)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }, FrameLayout.LayoutParams(context.readerDp(20), context.readerDp(20), Gravity.CENTER))
+}
+
+internal fun Context.glassBackButton(color: Int, backdrop: View, tint: Int = Color.WHITE, action: () -> Unit) =
+    GlassActionButton(this).apply {
+        useBackIcon(color)
+        usePopupOptics()
+        tintColor = tint
+        backdropSource = backdrop
+        frosted = GlassStyle.load(context) == GlassStyle.FROSTED
+        setGlassClickListener { action() }
+    }
 
 /** The click keeps its native hit testing. Multiple actions can rebound one shared glass surface. */
 @SuppressLint("ClickableViewAccessibility")
