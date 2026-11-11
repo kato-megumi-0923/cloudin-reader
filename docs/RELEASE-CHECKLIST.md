@@ -14,7 +14,7 @@
 1. [ ] 读代码：`git log <上个 tag>..HEAD`、`git diff --stat`，逐个看改动文件
 2. [ ] 出一份「功能变化 + 风险」清单给作者确认
 3. [ ] `assembleDebug` 编译通过
-4. [ ] 改版本号：`versionName` 第三位两位递增，`versionCode` +1
+4. [ ] 改版本号：`versionName` 第三位两位递增，`versionCode` +1；同步 README 顶部 `version` 徽章（静态徽章，写在 URL 里，容易漏）与 `## 版本历史` 表格
 5. [ ] 构建并复制到 `dist/cloudin-reader-<版本>.apk`
 6. [ ] `git commit` + `git tag -a v<版本>` + `git push` + `git push origin v<版本>`
 7. [ ] 写 release notes（Markdown），创建 GitHub Release 并上传 APK
