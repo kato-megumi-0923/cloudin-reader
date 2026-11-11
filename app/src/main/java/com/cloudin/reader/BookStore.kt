@@ -13,6 +13,8 @@ import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.util.UUID
 
+internal const val DEFAULT_COVER_COUNT = 165
+
 data class Book(
     val id: String,
     val title: String,
@@ -28,7 +30,8 @@ data class Book(
     var favorite: Boolean = false,
     var groupId: String? = null,
     var pinned: Boolean = false,
-    var readingOffset: Int? = null
+    var readingOffset: Int? = null,
+    var defaultCoverIndex: Int? = null
 )
 
 sealed class ImportResult {
@@ -65,7 +68,7 @@ object BookStore {
         val f = libraryFile(context)
         val atomic = AtomicFile(f)
         if (!f.exists() && !File(f.path + ".bak").exists()) return mutableListOf()
-        return try {
+        val books = try {
             val arr = JSONArray(atomic.openRead().bufferedReader().use { it.readText() })
             val list = mutableListOf<Book>()
             for (i in 0 until arr.length()) {
@@ -86,14 +89,35 @@ object BookStore {
                         favorite = o.optBoolean("favorite", false),
                         pinned = o.optBoolean("pinned", false),
                         groupId = if (o.isNull("groupId")) null else o.getString("groupId"),
-                        readingOffset = o.optInt("readingOffset", -1).takeIf { it >= 0 }
+                        readingOffset = o.optInt("readingOffset", -1).takeIf { it >= 0 },
+                        defaultCoverIndex = o.optInt("defaultCoverIndex", -1).takeIf {
+                            o.optInt("defaultCoverPoolSize") == DEFAULT_COVER_COUNT && it in 0 until DEFAULT_COVER_COUNT
+                        }
                     )
                 )
             }
             list
         } catch (e: Exception) {
-            mutableListOf()
+            return mutableListOf()
         }
+        if (assignDefaultCovers(books)) runCatching { save(context, books) }
+        return books
+    }
+
+    private fun assignDefaultCovers(books: List<Book>): Boolean {
+        val usage = IntArray(DEFAULT_COVER_COUNT)
+        val unassigned = mutableListOf<Book>()
+        for (book in books) {
+            if (book.coverPath != null) continue
+            val index = book.defaultCoverIndex
+            if (index == null) unassigned.add(book) else usage[index]++
+        }
+        for (book in unassigned) {
+            val index = usage.indices.minBy { usage[it] }
+            book.defaultCoverIndex = index
+            usage[index]++
+        }
+        return unassigned.isNotEmpty()
     }
 
     private fun save(context: Context, books: List<Book>) {
@@ -115,6 +139,8 @@ object BookStore {
                 put("pinned", b.pinned)
                 put("groupId", b.groupId)
                 put("readingOffset", b.readingOffset)
+                put("defaultCoverIndex", b.defaultCoverIndex)
+                if (b.defaultCoverIndex != null) put("defaultCoverPoolSize", DEFAULT_COVER_COUNT)
             })
         }
         val atomic = AtomicFile(libraryFile(context))
@@ -244,6 +270,7 @@ object BookStore {
                 ImportResult.Duplicate to duplicate
             } else {
                 existing.add(book)
+                assignDefaultCovers(existing)
                 try {
                     save(context, existing)
                 } catch (e: Exception) {

@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import android.content.Context
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -10,9 +12,9 @@ import android.util.LruCache
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
-/** Decodes imported covers off the UI thread and shares sized thumbnails between views. */
+/** Decodes covers off the UI thread and shares sized thumbnails between views. */
 internal object CoverThumbnailLoader {
-    data class Key(val path: String, val maxEdge: Int)
+    data class Key(val path: String, val maxEdge: Int, val resourceId: Int = 0)
     data class Result(val bitmap: Bitmap?, val isLight: Boolean)
 
     /** 一次解码请求；同一 key 的并发请求会合并成一次解码。 */
@@ -41,26 +43,38 @@ internal object CoverThumbnailLoader {
     private val lock = Any()
     private val inFlight = HashMap<Key, MutableList<Request>>()
 
-    fun key(path: String, width: Int, height: Int): Key {
+    fun key(path: String, width: Int, height: Int): Key = Key(path, sizeBucket(width, height))
+
+    fun resourceKey(context: Context, resourceId: Int, width: Int, height: Int): Key =
+        Key(context.packageName, sizeBucket(width, height), resourceId)
+
+    private fun sizeBucket(width: Int, height: Int): Int {
         val edge = maxOf(width, height)
-        val bucket = when {
+        return when {
             edge <= 256 -> 256
             edge <= 512 -> 512
             edge <= 768 -> 768
             else -> 1024
         }
-        return Key(path, bucket)
     }
 
     fun cached(key: Key): Result? = cache.get(key)
 
-    fun load(key: Key, callback: (Result) -> Unit): Request {
+    fun load(key: Key, callback: (Result) -> Unit): Request = load(key, callback) {
+        decode(key.maxEdge) { BitmapFactory.decodeFile(key.path, it) }
+    }
+
+    fun loadResource(resources: Resources, key: Key, callback: (Result) -> Unit): Request = load(key, callback) {
+        decode(key.maxEdge) { BitmapFactory.decodeResource(resources, key.resourceId, it) }
+    }
+
+    private fun load(key: Key, callback: (Result) -> Unit, decode: () -> Bitmap?): Request {
         val request = Request(key, callback)
-        cached(key)?.let { result ->
-            main.post { if (!request.cancelled) callback(result) }
-            return request
-        }
         synchronized(lock) {
+            cached(key)?.let { result ->
+                main.post { if (!request.cancelled) callback(result) }
+                return request
+            }
             val waiting = inFlight[key]
             if (waiting != null) {
                 waiting.add(request)
@@ -69,11 +83,19 @@ internal object CoverThumbnailLoader {
             inFlight[key] = mutableListOf(request)
         }
         workers.submit {
-            val result = runCatching { decode(key) }.getOrNull()
+            synchronized(lock) {
+                if (inFlight[key].orEmpty().all { it.cancelled }) {
+                    inFlight.remove(key)
+                    return@submit
+                }
+            }
+            val result = runCatching(decode).getOrNull()
                 ?.let { Result(it, sampleLight(it)) }
-            // 失败结果不写缓存，文件后补上时还能重试
-            if (result != null) cache.put(key, result)
-            val batch = synchronized(lock) { inFlight.remove(key) } ?: return@submit
+            val batch = synchronized(lock) {
+                // 失败结果不写缓存，文件后补上时还能重试
+                if (result != null) cache.put(key, result)
+                inFlight.remove(key)
+            } ?: return@submit
             main.post {
                 batch.forEach { req -> if (!req.cancelled) req.callback(result ?: Result(null, false)) }
             }
@@ -81,20 +103,21 @@ internal object CoverThumbnailLoader {
         return request
     }
 
-    private fun decode(key: Key): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(key.path, bounds)
+    private fun decode(maxEdge: Int, source: (BitmapFactory.Options) -> Bitmap?): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true; inScaled = false }
+        source(bounds)
         val longest = maxOf(bounds.outWidth, bounds.outHeight)
         if (longest <= 0) return null
         var sample = 1
-        while (longest / 2 / sample >= key.maxEdge) sample *= 2
-        val bitmap = BitmapFactory.decodeFile(key.path, BitmapFactory.Options().apply {
+        while (longest / 2 / sample >= maxEdge) sample *= 2
+        val bitmap = source(BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
+            inScaled = false
         }) ?: return null
         val edge = maxOf(bitmap.width, bitmap.height)
-        if (edge <= key.maxEdge) return bitmap
-        val scale = key.maxEdge.toFloat() / edge
+        if (edge <= maxEdge) return bitmap
+        val scale = maxEdge.toFloat() / edge
         val thumbnail = Bitmap.createScaledBitmap(bitmap,
             (bitmap.width * scale).roundToInt().coerceAtLeast(1),
             (bitmap.height * scale).roundToInt().coerceAtLeast(1), true)

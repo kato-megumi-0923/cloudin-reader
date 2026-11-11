@@ -1,6 +1,9 @@
 package com.cloudin.reader
 
 import android.app.Dialog
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -37,6 +40,7 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var backButton: GlassActionButton
     private lateinit var settingsPanel: AgslGlassView
     private var panelSection: Panel? = null
+    private var panelHeightAnimator: ValueAnimator? = null
     private lateinit var progressControls: View
     private lateinit var loading: TextView
     private lateinit var txtTitle: TextView
@@ -316,6 +320,8 @@ class ReaderActivity : AppCompatActivity() {
             return
         }
         val opening = panelSection == null
+        val previousHeight = settingsPanel.height
+        stopPanelHeightAnimation()
         settingsPanel.animate().cancel()
         panelSection = section
         applyChromeColors()
@@ -325,7 +331,7 @@ class ReaderActivity : AppCompatActivity() {
             Panel.TURN -> sectionPanel(getString(R.string.reader_turn_mode)) {
                 addView(readerTurnOptions(theme, pageView) { applyLayoutPreferences() })
             }
-            Panel.PROGRESS -> sectionPanel(getString(R.string.reader_progress)) {
+            Panel.PROGRESS -> sectionPanel(getString(R.string.reader_progress), main = true) {
                 (progressControls.parent as? ViewGroup)?.removeView(progressControls)
                 addView(progressControls, LinearLayout.LayoutParams(-1, -2))
             }
@@ -375,10 +381,39 @@ class ReaderActivity : AppCompatActivity() {
         settingsPanel.addView(scroll, FrameLayout.LayoutParams(-1, -2))
         settingsPanel.visibility = View.VISIBLE
         settingsPanel.translationY = if (opening) dp(22).toFloat() else 0f
-        scroll.alpha = 0f
+        scroll.alpha = if (refresh) 1f else 0f
+        scroll.translationX = if (opening || refresh) 0f else dp(18).toFloat() * if (section == Panel.SETTINGS) -1 else 1
+        if (!opening && !refresh && previousHeight > 0) {
+            scroll.measure(
+                View.MeasureSpec.makeMeasureSpec(
+                    (settingsPanel.layoutParams.width.takeIf { it > 0 } ?: settingsPanel.width).coerceAtLeast(1),
+                    View.MeasureSpec.EXACTLY
+                ),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            val targetHeight = scroll.measuredHeight
+            if (targetHeight != previousHeight) {
+                settingsPanel.layoutParams = settingsPanel.layoutParams.apply { height = previousHeight }
+                panelHeightAnimator = ValueAnimator.ofInt(previousHeight, targetHeight).apply {
+                    duration = 220L
+                    interpolator = android.view.animation.DecelerateInterpolator()
+                    addUpdateListener { frame ->
+                        settingsPanel.layoutParams = settingsPanel.layoutParams.apply { height = frame.animatedValue as Int }
+                    }
+                    addListener(object : AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: Animator) {
+                            settingsPanel.layoutParams = settingsPanel.layoutParams.apply { height = ViewGroup.LayoutParams.WRAP_CONTENT }
+                            panelHeightAnimator = null
+                        }
+                    })
+                    start()
+                }
+            }
+        }
         settingsPanel.animate().translationY(0f).setDuration(220)
             .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
-        scroll.animate().alpha(1f).setDuration(160).start()
+        scroll.animate().alpha(1f).translationX(0f).setDuration(200)
+            .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
     }
 
     private fun mainSettings() = sectionPanel(getString(R.string.reader_settings), main = true) {
@@ -559,10 +594,18 @@ class ReaderActivity : AppCompatActivity() {
         return row
     }
 
+    private fun stopPanelHeightAnimation() {
+        panelHeightAnimator?.removeAllListeners()
+        panelHeightAnimator?.cancel()
+        panelHeightAnimator = null
+        settingsPanel.layoutParams = settingsPanel.layoutParams.apply { height = ViewGroup.LayoutParams.WRAP_CONTENT }
+    }
+
     private fun hideSettingsPanel() {
         if (panelSection == null) return
         panelSection = null
         applyChromeColors()
+        stopPanelHeightAnimation()
         settingsPanel.animate().cancel()
         settingsPanel.animate().translationY(settingsPanel.height.toFloat()).setDuration(140)
             .withEndAction {
@@ -662,6 +705,7 @@ class ReaderActivity : AppCompatActivity() {
     }
     private fun showCatalog() {
         val doc = document ?: return
+        stopPanelHeightAnimation()
         barsVisible = false
         pageView.setChromeVisible(false)
         listOf(topArea, bottomArea, settingsPanel).forEach { view ->

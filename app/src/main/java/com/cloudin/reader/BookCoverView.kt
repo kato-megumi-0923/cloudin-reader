@@ -4,8 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
@@ -27,6 +29,9 @@ class BookCoverView @JvmOverloads constructor(
     private var bookId: String = ""
     private var bitmap: Bitmap? = null
     private var coverPath: String? = null
+    private var defaultCoverIndex: Int? = null
+    private var artworkResourceId = 0
+    private var failedFileKey: CoverThumbnailLoader.Key? = null
     private var loadedKey: CoverThumbnailLoader.Key? = null
     private var pendingKey: CoverThumbnailLoader.Key? = null
     private var request: CoverThumbnailLoader.Request? = null
@@ -54,21 +59,27 @@ class BookCoverView @JvmOverloads constructor(
     }
     private val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val artworkScrim = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var placeholderGradient: LinearGradient? = null
     private val imageBounds = RectF()
     private val cardBounds = RectF()
     private val imageClip = android.graphics.Path()
 
 
     fun bind(book: Book) {
-        val changed = book.id != bookId || book.coverPath != coverPath
+        val changed = book.id != bookId || book.coverPath != coverPath || book.defaultCoverIndex != defaultCoverIndex
+        if (title != book.title) placeholderGradient = null
         title = book.title
         bookId = book.id
         if (changed) {
             cancelThumbnailRequest()
             bitmap = null
             loadedKey = null
+            failedFileKey = null
             coverPath = book.coverPath
-            updateAppearance(if (coverPath == null) artworkLight() else false)
+            defaultCoverIndex = book.defaultCoverIndex
+            artworkResourceId = artworkResource()
+            updateAppearance(false)
         }
         requestThumbnail()
         invalidate()
@@ -89,13 +100,23 @@ class BookCoverView @JvmOverloads constructor(
         cardBounds.set(0f, 0f, w.toFloat(), h.toFloat())
         imageClip.rewind()
         imageClip.addRoundRect(cardBounds, radius, radius, android.graphics.Path.Direction.CW)
+        placeholderGradient = null
+        artworkScrim.shader = if (h > 0) LinearGradient(
+            0f, h * 0.55f, 0f, h.toFloat(),
+            intArrayOf(0x00000000, 0x80000000.toInt(), 0xD9000000.toInt()),
+            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP
+        ) else null
         requestThumbnail()
     }
 
     private fun requestThumbnail() {
-        val path = coverPath ?: return
         if (!isAttachedToWindow || width <= 0 || height <= 0) return
-        val key = CoverThumbnailLoader.key(path, width, height)
+        val fileKey = coverPath?.let { CoverThumbnailLoader.key(it, width, height) }
+        val key = when {
+            fileKey != null && fileKey != failedFileKey -> fileKey
+            artworkResourceId != 0 -> CoverThumbnailLoader.resourceKey(context, artworkResourceId, width, height)
+            else -> return
+        }
         if (key == loadedKey || key == pendingKey) return
         cancelThumbnailRequest()
         val cached = CoverThumbnailLoader.cached(key)
@@ -105,9 +126,11 @@ class BookCoverView @JvmOverloads constructor(
         }
         pendingKey = key
         val generation = requestGeneration
-        request = CoverThumbnailLoader.load(key) { result ->
+        val callback: (CoverThumbnailLoader.Result) -> Unit = { result ->
             if (generation == requestGeneration) applyThumbnail(key, result)
         }
+        request = if (key.resourceId == 0) CoverThumbnailLoader.load(key, callback)
+            else CoverThumbnailLoader.loadResource(resources, key, callback)
     }
 
     private fun cancelThumbnailRequest() {
@@ -122,7 +145,11 @@ class BookCoverView @JvmOverloads constructor(
         pendingKey = null
         loadedKey = key
         bitmap = result.bitmap
-        updateAppearance(if (result.bitmap != null) result.isLight else artworkLight())
+        updateAppearance(result.isLight)
+        if (result.bitmap == null && key.resourceId == 0) {
+            failedFileKey = key
+            requestThumbnail()
+        }
         invalidate()
     }
 
@@ -130,24 +157,6 @@ class BookCoverView @JvmOverloads constructor(
         if (coverIsLight == isLight) return
         coverIsLight = isLight
         onCoverAppearanceChanged?.invoke(isLight)
-    }
-
-    private fun artworkLight(): Boolean {
-        val idx = ((title.hashCode() * 31 + bookId.hashCode()) and 0x7fffffff) % 20
-        val name = String.format("cover_lib_%02d", idx + 1)
-        val res = resources.getIdentifier(name, "drawable", context.packageName)
-        if (res == 0) return false
-        artworkLightCache[res]?.let { return it }
-        val d = runCatching { androidx.core.content.ContextCompat.getDrawable(context, res) }.getOrNull()
-            ?: return false
-        val bmp = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        d.setBounds(0, 0, 16, 16)
-        d.draw(canvas)
-        val light = CoverThumbnailLoader.sampleLight(bmp)
-        bmp.recycle()
-        artworkLightCache[res] = light
-        return light
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -161,12 +170,12 @@ class BookCoverView @JvmOverloads constructor(
         val h = height.toFloat()
         val rect = cardBounds
 
-        val bmp0 = bitmap
-        if (bmp0 == null) {
-            val (c1, c2) = coverColors()
-            coverPaint.shader = android.graphics.LinearGradient(
-                0f, 0f, w, h, c1, c2, android.graphics.Shader.TileMode.CLAMP
-            )
+        val bmp = bitmap
+        if (bmp == null) {
+            coverPaint.shader = placeholderGradient ?: run {
+                val (c1, c2) = coverColors()
+                LinearGradient(0f, 0f, w, h, c1, c2, Shader.TileMode.CLAMP).also { placeholderGradient = it }
+            }
             canvas.drawRoundRect(rect, radius, radius, coverPaint)
             coverPaint.shader = null
         } else {
@@ -174,7 +183,7 @@ class BookCoverView @JvmOverloads constructor(
         }
         if (!folderPreview) canvas.drawRoundRect(rect, radius, radius, borderPaint)
 
-        val bmp = bitmap
+        val isArtwork = (loadedKey?.resourceId ?: 0) != 0
         if (bmp != null) {
             canvas.save()
             if (!folderPreview) canvas.clipPath(imageClip)
@@ -185,12 +194,13 @@ class BookCoverView @JvmOverloads constructor(
             val top = (h - dh) / 2f
             imageBounds.set(left, top, left + dw, top + dh)
             canvas.drawBitmap(bmp, null, imageBounds, imagePaint)
+            if (isArtwork) canvas.drawRect(0f, h * 0.55f, w, h, artworkScrim)
             canvas.restore()
-            return
+            if (!isArtwork) return
+        } else if (artworkResourceId == 0 || isArtwork) {
+            drawGirl(canvas, w, h)
         }
 
-        // 渐变底 + 图库插画（按书名固定分配）
-        if ((coverPath == null || loadedKey != null) && !drawArtwork(canvas, w, h)) drawGirl(canvas, w, h)
         // 底部书名（1–2 行）
         val pad = w * 0.10f
         val maxWidth = w - pad * 2
@@ -215,44 +225,11 @@ class BookCoverView @JvmOverloads constructor(
         return c1 to c2
     }
 
-    /** 用预置插画做封面：居中裁切 + 底部压暗，保证书名可读 */
-    private fun drawArtwork(canvas: Canvas, w: Float, h: Float): Boolean {
-        val count = 20
-        val idx = ((title.hashCode() * 31 + bookId.hashCode()) and 0x7fffffff) % count
-        val name = String.format("cover_lib_%02d", idx + 1)
-        val res = resources.getIdentifier(name, "drawable", context.packageName)
-        if (res == 0) return false
-        val d = runCatching { androidx.core.content.ContextCompat.getDrawable(context, res) }.getOrNull() ?: return false
-        val rect = RectF(0f, 0f, w, h)
-        canvas.save()
-        val path = android.graphics.Path().apply {
-            addRoundRect(rect, radius, radius, android.graphics.Path.Direction.CW)
-        }
-        canvas.clipPath(path)
-        val iw = d.intrinsicWidth.coerceAtLeast(1).toFloat()
-        val ih = d.intrinsicHeight.coerceAtLeast(1).toFloat()
-        val scale = maxOf(w / iw, h / ih)
-        val dw = iw * scale
-        val dh = ih * scale
-        val left = (w - dw) / 2f
-        val top = (h - dh) / 2f
-        d.setBounds(
-            left.toInt(), top.toInt(), (left + dw).toInt(), (top + dh).toInt()
-        )
-        d.draw(canvas)
-
-        // 底部压暗，托住书名
-        val scrim = Paint(Paint.ANTI_ALIAS_FLAG)
-        scrim.shader = android.graphics.LinearGradient(
-            0f, h * 0.55f, 0f, h,
-            intArrayOf(0x00000000, 0x80000000.toInt(), 0xD9000000.toInt()),
-            floatArrayOf(0f, 0.55f, 1f),
-            android.graphics.Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(0f, h * 0.55f, w, h, scrim)
-        scrim.shader = null
-        canvas.restore()
-        return true
+    private fun artworkResource(): Int {
+        val index = defaultCoverIndex
+            ?: (((title.hashCode() * 31 + bookId.hashCode()) and 0x7fffffff) % DEFAULT_COVER_COUNT)
+        val name = String.format(java.util.Locale.ROOT, "cover_lib_%02d", index + 1)
+        return resources.getIdentifier(name, "drawable", context.packageName)
     }
     /** 没封面时：渐变底 + 手绘 Q 版少女，按书名换发色 */
     private fun drawGirl(canvas: Canvas, w: Float, h: Float) {
@@ -359,8 +336,5 @@ class BookCoverView @JvmOverloads constructor(
         }
         if (current.isNotEmpty() && result.size < maxLines) result.add(current.toString())
         return if (result.isEmpty()) listOf("") else result
-    }
-    private companion object {
-        val artworkLightCache = HashMap<Int, Boolean>()
     }
 }

@@ -67,6 +67,23 @@ class ReaderRegressionTest {
         assertSame(loaded, CoverThumbnailLoader.cached(key))
     }
 
+    @Test fun bundledCoverLoadsAsSharedThumbnail() {
+        val key = CoverThumbnailLoader.resourceKey(context, R.drawable.reader_texture_kraft, 140, 200)
+        val ready = CountDownLatch(2)
+        val results = mutableListOf<CoverThumbnailLoader.Result>()
+        val callback: (CoverThumbnailLoader.Result) -> Unit = {
+            results.add(it)
+            ready.countDown()
+        }
+        CoverThumbnailLoader.loadResource(context.resources, key, callback)
+        CoverThumbnailLoader.loadResource(context.resources, key, callback)
+        assertTrue(ready.await(10, TimeUnit.SECONDS))
+        val image = checkNotNull(results[0].bitmap)
+        assertTrue(maxOf(image.width, image.height) <= 256)
+        assertSame(results[0], results[1])
+        assertSame(results[0], CoverThumbnailLoader.cached(key))
+    }
+
     @Test fun readingSessionSplitsAtLocalMidnightAndKeepsLegacyTotal() {
         val base = instrumentation.targetContext
         val file = "stats-test-${System.nanoTime()}"
@@ -179,6 +196,33 @@ class ReaderRegressionTest {
         assertEquals(ImportResult.Duplicate, txt("second", "同一本书"))
         assertEquals(1, BookStore.load(context).size)
         assertEquals(1, BookStore.booksDir(context).listFiles()!!.size)
+    }
+
+    @Test fun defaultCoversMigrateAndReuseLeastUsedImages() {
+        repeat(DEFAULT_COVER_COUNT) { index -> txt("default-cover-$index") as ImportResult.Added }
+        val library = File(root, "library.json")
+        val legacy = org.json.JSONArray(library.readText())
+        repeat(legacy.length()) { index ->
+            legacy.getJSONObject(index).apply {
+                remove("defaultCoverPoolSize")
+                put("defaultCoverIndex", index % 28)
+            }
+        }
+        library.writeText(legacy.toString())
+
+        val migrated = BookStore.load(context)
+        assertEquals((0 until DEFAULT_COVER_COUNT).toSet(), migrated.map { it.defaultCoverIndex }.toSet())
+        assertEquals(DEFAULT_COVER_COUNT, org.json.JSONArray(library.readText()).getJSONObject(0).getInt("defaultCoverPoolSize"))
+
+        val extra = (txt("extra-cover") as ImportResult.Added).book
+        val next = (txt("next-cover") as ImportResult.Added).book
+        assertNotEquals(extra.defaultCoverIndex, next.defaultCoverIndex)
+        assertEquals(migrated, BookStore.load(context).take(DEFAULT_COVER_COUNT))
+
+        val released = migrated.last()
+        BookStore.remove(context, released)
+        val replacement = (txt("replacement-cover") as ImportResult.Added).book
+        assertEquals(released.defaultCoverIndex, replacement.defaultCoverIndex)
     }
 
     @Test fun concurrentImportsAndMetadataUpdatesDoNotLoseBooks() {
