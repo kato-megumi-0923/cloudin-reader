@@ -12,6 +12,7 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.util.UUID
+import kotlin.random.Random
 
 internal const val DEFAULT_COVER_COUNT = 165
 
@@ -104,7 +105,14 @@ object BookStore {
         return books
     }
 
-    private fun assignDefaultCovers(books: List<Book>): Boolean {
+    /**
+     * 给没有真实封面的书分配内置封面池编号。
+     *
+     * 规则：永远在「当前使用次数最少」的候选里随机挑一个。
+     * 这样既保持分配均匀（任意两张的使用次数差不超过 1），
+     * 又不会让连续导入的一批书拿到 0、1、2… 这样的连号。
+     */
+    internal fun assignDefaultCovers(books: List<Book>, random: Random = Random.Default): Boolean {
         val usage = IntArray(DEFAULT_COVER_COUNT)
         val unassigned = mutableListOf<Book>()
         for (book in books) {
@@ -112,12 +120,21 @@ object BookStore {
             val index = book.defaultCoverIndex
             if (index == null) unassigned.add(book) else usage[index]++
         }
+        if (unassigned.isEmpty()) return false
         for (book in unassigned) {
-            val index = usage.indices.minBy { usage[it] }
-            book.defaultCoverIndex = index
-            usage[index]++
+            val least = usage.min()
+            // 在最少使用的候选里随机取第 k 个，避免每次都从最小的下标开始
+            val candidates = usage.count { it == least }
+            var skip = random.nextInt(candidates)
+            var chosen = -1
+            for (index in usage.indices) {
+                if (usage[index] != least) continue
+                if (skip-- == 0) { chosen = index; break }
+            }
+            book.defaultCoverIndex = chosen
+            usage[chosen]++
         }
-        return unassigned.isNotEmpty()
+        return true
     }
 
     private fun save(context: Context, books: List<Book>) {

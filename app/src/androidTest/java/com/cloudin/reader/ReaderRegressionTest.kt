@@ -226,6 +226,59 @@ class ReaderRegressionTest {
         }
     }
 
+    /** 一次性导入一批书时，不能拿到 0、1、2… 这样的连号封面。 */
+    @Test fun batchImportDoesNotGetSequentialCovers() {
+        val books = (0 until 12).map { poolBook("batch-$it") }
+        assertTrue(BookStore.assignDefaultCovers(books, kotlin.random.Random(7)))
+        val indices = books.map { checkNotNull(it.defaultCoverIndex) }
+        assertEquals("同一批书不应出现重复封面", indices.size, indices.toSet().size)
+        assertNotEquals("不应退化成按下标顺序发放", (0 until 12).toList(), indices)
+    }
+
+    /** 随机挑选仍然要保持均匀：任意两张封面的使用次数差不超过 1。 */
+    @Test fun coverAssignmentStaysBalancedUnderRandomness() {
+        val books = (0 until 400).map { poolBook("bulk-$it") }
+        BookStore.assignDefaultCovers(books, kotlin.random.Random(11))
+        val usage = IntArray(DEFAULT_COVER_COUNT)
+        books.forEach { usage[checkNotNull(it.defaultCoverIndex)]++ }
+        assertEquals(books.size, usage.sum())
+        assertTrue("最大与最小使用次数差 ${usage.max() - usage.min()} 超过 1", usage.max() - usage.min() <= 1)
+        assertTrue("分配不应集中在前几个编号", usage.count { it > 0 } > 100)
+    }
+
+    /** 已经分配过的书再次加载时不能被重新洗牌。 */
+    @Test fun assignedCoversAreStable() {
+        val books = (0 until 20).map { poolBook("stable-$it") }
+        BookStore.assignDefaultCovers(books, kotlin.random.Random(3))
+        val before = books.map { checkNotNull(it.defaultCoverIndex) }
+        assertFalse(BookStore.assignDefaultCovers(books, kotlin.random.Random(99)))
+        assertEquals(before, books.map { checkNotNull(it.defaultCoverIndex) })
+    }
+
+    /** 有真实封面的书不占用内置封面池。 */
+    @Test fun booksWithRealCoversDoNotConsumePool() {
+        val real = (0 until 5).map { poolBook("real-$it").copy(coverPath = "/tmp/cover-$it.jpg") }
+        val plain = (0 until 5).map { poolBook("plain-$it") }
+        BookStore.assignDefaultCovers(real + plain, kotlin.random.Random(5))
+        assertTrue(real.all { it.defaultCoverIndex == null })
+        val indices = plain.map { checkNotNull(it.defaultCoverIndex) }
+        assertEquals(5, indices.toSet().size)
+        assertTrue("编号应落在封面池范围内", indices.all { it in 0 until DEFAULT_COVER_COUNT })
+    }
+
+    private fun poolBook(id: String) = Book(
+        id = id,
+        title = id,
+        author = "",
+        format = "txt",
+        path = "/tmp/$id.txt",
+        coverPath = null,
+        progress = 0f,
+        lastRead = 0L,
+        addedAt = 0L,
+        charset = null
+    )
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private lateinit var root: File
     private lateinit var context: Context
