@@ -53,7 +53,12 @@ internal class Paginator(
             measurePaint.textSize, measurePaint.textLocales.toLanguageTags()
         ).joinToString("\n"))
         val ranges = layoutKey?.let { cache.read(it, text.length) }
-            ?: PageBreaker.breakPages(text, measurePaint, size.width, size.height, multiplier).also {
+            ?: PageBreaker.breakPages(
+                text, measurePaint, size.width, size.height, multiplier,
+                chapterStarts = document.chapters.map { it.offset }
+                    .filter { it in 1 until text.length }
+                    .distinct().sorted().toIntArray()
+            ).also {
                 if (layoutKey != null) cache.write(layoutKey, it)
             }
         return PreparedLayout(text, ranges, size)

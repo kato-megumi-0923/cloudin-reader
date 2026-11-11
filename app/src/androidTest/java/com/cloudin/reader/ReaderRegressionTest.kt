@@ -173,6 +173,59 @@ class ReaderRegressionTest {
         assertEquals(0, page.pageIndex())
     }
 
+    /** 每一章都必须从新的一页开始，不允许接在上一章正文后面。 */
+    @Test fun everyChapterStartsOnItsOwnPage() {
+        val text = buildString {
+            repeat(4) { index ->
+                append("第00").append(index + 1).append("章 测试章节\n")
+                repeat(30) { append("　　这是一段用来把页面填满的占位正文，长度取中等，保证一章会跨越多页。\n") }
+            }
+        }
+        val starts = Regex("第0+\\d+章").findAll(text).map { it.range.first }.toList()
+        assertEquals(4, starts.size)
+        val paint = android.text.TextPaint().apply { textSize = 40f }
+        val pages = PageBreaker.breakPages(text, paint, 720, 1100, 1.62f, starts.toIntArray())
+
+        assertTrue("分页结果为空", pages.isNotEmpty())
+        // 第 1 章在文首，天然是页首；其余每章必须各自开启一页
+        for (start in starts) {
+            assertTrue("章节起点 $start 未落在任何页的页首", pages.any { it.first == start })
+        }
+        // 任何一页内部都不允许出现章节起点
+        for (page in pages) {
+            for (start in starts) {
+                assertFalse(
+                    "章节起点 $start 被并入了 ${page.first}..${page.last} 这一页",
+                    start > page.first && start <= page.last
+                )
+            }
+        }
+    }
+
+    /** 章节偏移必须正好落在标题首字上，否则强制分页会把标题切成两半。 */
+    @Test fun chapterOffsetsPointAtHeadingText() {
+        val content = buildString {
+            // 首行是书名而不是章节标题：它会被缩进两格，再被 trim 掉，正是偏移错位的来源
+            append("书名：偏移测试\n")
+            append("作者：测试\n\n")
+            repeat(3) { index ->
+                append("第00").append(index + 1).append("章 标题").append(index + 1).append('\n')
+                append("　　这里是正文。\n")
+            }
+        }
+        val book = (txt("chapter-offsets", content) as ImportResult.Added).book
+        val document = checkNotNull(DocumentLoader.load(book))
+        assertEquals(3, document.chapters.size)
+        for (mark in document.chapters) {
+            assertTrue(
+                "章节「${mark.title}」的偏移 ${mark.offset} 没有落在标题首字上，实际是「${
+                    document.text.substring(mark.offset, (mark.offset + 8).coerceAtMost(document.text.length))
+                }」",
+                document.text.startsWith(mark.title, mark.offset)
+            )
+        }
+    }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private lateinit var root: File
     private lateinit var context: Context

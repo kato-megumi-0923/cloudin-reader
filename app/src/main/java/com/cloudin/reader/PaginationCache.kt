@@ -14,7 +14,8 @@ internal class PaginationCache(directory: File, private val bookId: String) {
 
     fun key(document: Document, layout: String): String = listOf(
         VERSION, Build.FINGERPRINT, bookId, document.text.length,
-        document.text.hashCode(), document.images.hashCode(), layout
+        document.text.hashCode(), document.images.hashCode(),
+        document.chapters.hashCode(), layout
     ).joinToString("\n")
 
     fun read(key: String, textLength: Int): List<IntRange>? {
@@ -71,7 +72,7 @@ internal class PaginationCache(directory: File, private val bookId: String) {
     }
 
     private companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val MAX_PAGES = 1_000_000
         val SAFE_ID = Regex("[A-Za-z0-9_-]{1,80}")
 

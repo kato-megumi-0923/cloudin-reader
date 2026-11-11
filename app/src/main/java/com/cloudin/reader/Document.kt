@@ -60,7 +60,15 @@ object DocumentLoader {
                 builder.append("　　").append(line).append('\n')
             }
         }
-        return Document(book.title, builder.toString().trim(), marks)
+        val built = builder.toString()
+        // trim() 会吃掉文首缩进（首行不是章节标题时会被缩进两格），
+        // 而章节偏移是按 trim 之前的字符串记的，必须同步回退，否则断页点会落进标题里。
+        val shift = built.length - built.trimStart().length
+        return Document(
+            book.title,
+            built.trim(),
+            marks.map { it.copy(offset = (it.offset - shift).coerceAtLeast(0)) }
+        )
     }
 
     private val headingRegex = Regex(
