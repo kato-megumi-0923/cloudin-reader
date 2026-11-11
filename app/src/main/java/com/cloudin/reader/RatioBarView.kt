@@ -11,8 +11,8 @@ internal class RatioBarView(
     private val ratio: Float
 ) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val track = 0xFFF5E5DC.toInt()
-    private val fill = 0xFFC96950.toInt()
+    private val track = context.getColor(R.color.shelf_track)
+    private val fill = context.getColor(R.color.shelf_tab_selected)
 
     override fun onDraw(canvas: Canvas) {
         val h = height.toFloat()

@@ -40,13 +40,13 @@ internal fun Context.readerButton(text: String, theme: Int, backdrop: View, acti
 
 internal fun Context.readerSegments(
     labels: List<String>, initial: Int, theme: Int, backdrop: View, label: String,
-    vertical: Boolean = false, onSelect: (Int) -> Unit
+    vertical: Boolean = false, trackColor: Int? = null, onSelect: (Int) -> Unit
 ): View {
     val ink = ReaderPrefs.ink(theme)
     val dark = ReaderPrefs.palette(theme).dark
     val track = FrameLayout(this).apply {
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        background = readerPill(if (dark) 0x20FFFFFF else 0x1E473315)
+        background = readerPill(trackColor ?: if (dark) 0x20FFFFFF else 0x1E473315)
         setPadding(readerDp(2), readerDp(2), readerDp(2), readerDp(2))
     }
     val lens = AgslGlassView(this).apply {

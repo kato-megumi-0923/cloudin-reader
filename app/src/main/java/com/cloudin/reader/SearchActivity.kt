@@ -2,7 +2,6 @@ package com.cloudin.reader
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -21,7 +20,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -48,14 +46,10 @@ class SearchActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
-        }
+        window.useAuroraSystemBars()
         books = BookStore.load(this).sortedByDescending { it.lastRead }
 
-        val backdrop = View(this).apply { setBackgroundColor(paper) }
+        val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }

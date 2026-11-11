@@ -1,11 +1,9 @@
 package com.cloudin.reader
 
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -17,10 +15,9 @@ import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -30,19 +27,15 @@ class ReadingStatsActivity : AppCompatActivity() {
         OVERVIEW("阅读统计"), DAILY("每日阅读"), MONTHLY("月度阅读"), BOOKS("已读书籍")
     }
 
-    private val ink = 0xFF332C26.toInt()
-    private val muted = 0xFF786D64.toInt()
-    private val paper = 0xFFFAF7F1.toInt()
-    private val warm = 0xFFF7EEE6.toInt()
-    private val stroke = 0xFFE9DED4.toInt()
-    private val accent = 0xFFC96950.toInt()
-    private val lightDay = 0xFFF5E5DC.toInt()
-    private val mediumDay = 0xFFF0BFAE.toInt()
-    private val darkDay = 0xFFE99A7E.toInt()
+    private val ink get() = getColor(R.color.shelf_title)
+    private val muted get() = getColor(R.color.shelf_secondary_ink)
+    private val accent by lazy { getColor(R.color.shelf_tab_selected) }
+    private val lightDay by lazy { ColorUtils.setAlphaComponent(accent, 46) }
+    private val mediumDay by lazy { ColorUtils.setAlphaComponent(accent, 97) }
+    private val darkDay by lazy { ColorUtils.setAlphaComponent(accent, 166) }
     private val dateLabel = DateTimeFormatter.ofPattern("M.d")
     private var page = Page.OVERVIEW
     private lateinit var root: LinearLayout
-    private lateinit var backdrop: View
     private lateinit var header: TextView
     private lateinit var scroll: ScrollView
 
@@ -53,15 +46,11 @@ class ReadingStatsActivity : AppCompatActivity() {
             overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.stats_under_enter, R.anim.stats_exit)
         }
         page = savedInstanceState?.getString("stats_page")?.let { Page.valueOf(it) } ?: Page.OVERVIEW
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
-        }
+        window.useAuroraSystemBars()
         root = column()
-        backdrop = View(this).apply { setBackgroundColor(warm) }
+        val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val toolbar = row().apply { gravity = Gravity.CENTER_VERTICAL }
-        val back = glassBackButton(ink, backdrop, paper) { onBackPressedDispatcher.onBackPressed() }
+        val back = glassBackButton(ink, backdrop) { onBackPressedDispatcher.onBackPressed() }
         toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
             marginStart = dp(10)
             marginEnd = dp(8)
@@ -69,7 +58,8 @@ class ReadingStatsActivity : AppCompatActivity() {
         header = label("", 17f, ink).apply { setTypeface(typeface, Typeface.BOLD) }
         toolbar.addView(header)
         root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(52)))
-        root.addView(View(this).apply { setBackgroundColor(stroke) }, LinearLayout.LayoutParams(-1, dp(1)))
+        root.addView(View(this).apply { setBackgroundColor(getColor(R.color.shelf_separator)) },
+            LinearLayout.LayoutParams(-1, dp(1)))
         scroll = ScrollView(this).apply { isFillViewport = true }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(FrameLayout(this).apply {
@@ -109,7 +99,6 @@ class ReadingStatsActivity : AppCompatActivity() {
         val timeline = ReadingStats.read(this)
         val today = LocalDate.now()
         header.text = page.title
-        backdrop.setBackgroundColor(if (page == Page.OVERVIEW) warm else paper)
         scroll.removeAllViews()
         val content = when (page) {
             Page.OVERVIEW -> overview(timeline, today)
@@ -164,7 +153,7 @@ class ReadingStatsActivity : AppCompatActivity() {
 
     private fun statRow(name: String, value: String): View = row().apply {
         gravity = Gravity.CENTER_VERTICAL
-        background = panel()
+        setBackgroundResource(R.drawable.bg_profile_card)
         setPadding(dp(15), dp(9), dp(15), dp(9))
         minimumHeight = dp(54)
         addView(label(name, 13f, muted), LinearLayout.LayoutParams(0, -2, 1f))
@@ -268,7 +257,7 @@ class ReadingStatsActivity : AppCompatActivity() {
 
     private fun card(action: () -> Unit): LinearLayout = column().apply {
         setPadding(dp(15), dp(14), dp(15), dp(14))
-        background = RippleDrawable(ColorStateList.valueOf(0x14000000), panel(), null)
+        setBackgroundResource(R.drawable.bg_profile_card)
         isFocusable = true
         setOnClickListener { action() }
     }
@@ -281,7 +270,6 @@ class ReadingStatsActivity : AppCompatActivity() {
     }
 
     private fun metric(value: String) = label(value, 23f, ink).apply { typeface = Typeface.SERIF }
-    private fun panel() = rounded(paper, 5).apply { setStroke(dp(1), stroke) }
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
     private fun hourLabel(millis: Long): String = when {
         millis <= 0L -> "0 分钟"

@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.graphics.Matrix
 import android.media.MediaScannerConnection
 import android.os.Build
@@ -25,9 +24,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -53,13 +50,18 @@ class ReaderImageActivity : AppCompatActivity() {
             return
         }
         source = file
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-        val picture = ZoomImageView(this).apply { contentDescription = getString(R.string.reader_image_description) }
+        window.useAuroraSystemBars()
+        val root = FrameLayout(this)
+        val picture = ZoomImageView(this).apply {
+            setBackgroundResource(R.drawable.bg_aurora)
+            contentDescription = getString(R.string.reader_image_description)
+        }
         root.addView(picture, FrameLayout.LayoutParams(-1, -1))
         val buttons = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        val theme = ReaderPrefs.THEME_BLACK
-        buttons.addView(glassBackButton(ReaderPrefs.ink(theme), picture, ReaderPrefs.chrome(theme)) { finish() },
+        val theme = ReaderPrefs.THEME_PURE_WHITE
+        val back = glassBackButton(ReaderPrefs.ink(theme), picture, ReaderPrefs.chrome(theme)) { finish() }
+        back.tintAlpha = 0.65f
+        buttons.addView(back,
             LinearLayout.LayoutParams(readerDp(44), readerDp(44)))
         buttons.addView(android.view.View(this), LinearLayout.LayoutParams(0, 1, 1f))
         save = readerButton(getString(R.string.reader_image_save), theme, picture) {
@@ -67,6 +69,7 @@ class ReaderImageActivity : AppCompatActivity() {
                 storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             } else saveImage()
         }
+        save.tintAlpha = 0.65f
         save.isEnabled = false
         buttons.addView(save, LinearLayout.LayoutParams(readerDp(106), readerDp(48)))
         root.addView(buttons, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
@@ -74,10 +77,6 @@ class ReaderImageActivity : AppCompatActivity() {
             marginEnd = readerDp(16)
         })
         setContentView(root)
-        WindowInsetsControllerCompat(window, root).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
-        }
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             buttons.setPadding(bars.left, bars.top + readerDp(8), bars.right, 0)

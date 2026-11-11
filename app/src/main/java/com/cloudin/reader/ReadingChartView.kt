@@ -21,7 +21,9 @@ internal class ReadingChartView(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val line = Path()
     private val dashed = DashPathEffect(floatArrayOf(3f * density, 2f * density), 0f)
-    private val accent = 0xFFC96950.toInt()
+    private val accent = context.getColor(R.color.shelf_tab_selected)
+    private val track = context.getColor(R.color.shelf_track)
+    private val labelColor = context.getColor(R.color.shelf_secondary_ink)
 
     override fun onDraw(canvas: Canvas) {
         val left = if (compact) 0f else 4f * density
@@ -37,7 +39,7 @@ internal class ReadingChartView(
         fun y(i: Int): Float = bottom - (bottom - top) * (millis[i] / 60_000f / maximum)
 
         paint.strokeWidth = density * 0.7f
-        paint.color = 0xFFD8D0C8.toInt()
+        paint.color = track
         paint.pathEffect = dashed
         if (!compact) {
             for (i in 0..6) {
@@ -53,7 +55,7 @@ internal class ReadingChartView(
             val half = minOf(step * 0.24f, (if (compact) 3f else 6f) * density)
             for (i in millis.indices) {
                 if (compact) {
-                    paint.color = 0xFFE9E1DB.toInt()
+                    paint.color = track
                     canvas.drawRect(x(i) - half, top, x(i) + half, bottom, paint)
                 }
                 if (millis[i] > 0) {
@@ -81,14 +83,13 @@ internal class ReadingChartView(
         }
 
         paint.textSize = (if (compact) 9f else 11f) * density
-        paint.color = 0xFF736960.toInt()
+        paint.color = labelColor
         labels.forEach { (index, value) ->
             val offset = (x(index) - paint.measureText(value) / 2).coerceIn(left, max(left, right - paint.measureText(value)))
             canvas.drawText(value, offset, height - 3f * density, paint)
         }
         if (!compact) {
             paint.textSize = 9f * density
-            paint.color = 0xFF938980.toInt()
             canvas.drawText(maximum.toInt().toString(), left + 2f * density, top - 2f * density, paint)
             canvas.drawText(java.text.NumberFormat.getNumberInstance().format(maximum / 2f),
                 left + 2f * density, (top + bottom) / 2 - 2f * density, paint)

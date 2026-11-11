@@ -12,27 +12,23 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 class ReadingBackgroundActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        val dark = ReaderPrefs.palette(ReaderPrefs.theme(this)).dark
-        val ink = if (dark) 0xFFE8E5E0.toInt() else 0xFF27231D.toInt()
-        val base = if (dark) 0xFF22252A.toInt() else 0xFFF6F3ED.toInt()
-        val backdrop = View(this).apply { setBackgroundColor(base) }
+        window.useAuroraSystemBars()
+        val ink = getColor(R.color.ink)
+        val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
         val heading = FrameLayout(this)
         heading.addView(readerLabel(getString(R.string.reader_background), ink, 19f).apply { setTypeface(null, Typeface.BOLD) },
             FrameLayout.LayoutParams(-1, -1))
-        heading.addView(glassBackButton(ink, backdrop, base) { finish() },
+        heading.addView(glassBackButton(ink, backdrop) { finish() },
             FrameLayout.LayoutParams(readerDp(44), readerDp(44), Gravity.START or Gravity.CENTER_VERTICAL)
             .apply { marginStart = readerDp(14) })
         root.addView(heading, LinearLayout.LayoutParams(-1, readerDp(58)))
@@ -61,10 +57,6 @@ class ReadingBackgroundActivity : AppCompatActivity() {
             addView(backdrop, FrameLayout.LayoutParams(-1, -1))
             addView(root, FrameLayout.LayoutParams(-1, -1))
         })
-        WindowInsetsControllerCompat(window, root).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
-        }
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)

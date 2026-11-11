@@ -44,7 +44,7 @@
                 android:id="@+id/historyPercent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#A94F3B"
+                android:textColor="@color/shelf_tab_selected"
                 android:textSize="11sp" />
 
             <ProgressBar
@@ -55,8 +55,8 @@
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:importantForAccessibility="no"
-                android:progressBackgroundTint="#E7DFD6"
-                android:progressTint="#C96950" />
+                android:progressBackgroundTint="@color/shelf_track"
+                android:progressTint="@color/shelf_tab_selected" />
         </LinearLayout>
     </LinearLayout>
 

@@ -1,7 +1,6 @@
 package com.cloudin.reader
 
 import android.content.Intent
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -14,9 +13,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -29,14 +26,11 @@ class ReadingHistoryActivity : AppCompatActivity() {
     }
 
     private var filter = Filter.IN_PROGRESS
-    private val paper = 0xFFFAF7F1.toInt()
-    private val ink = 0xFF332C26.toInt()
-    private val muted = 0xFF786D64.toInt()
-    private val accent = 0xFFA94F3B.toInt()
+    private val ink get() = getColor(R.color.shelf_title)
+    private val muted get() = getColor(R.color.shelf_secondary_ink)
     private lateinit var count: TextView
     private lateinit var empty: TextView
     private lateinit var list: RecyclerView
-    private lateinit var segmentLabels: List<TextView>
     private val adapter = HistoryAdapter()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,15 +40,11 @@ class ReadingHistoryActivity : AppCompatActivity() {
             overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.stats_enter, R.anim.stats_under_exit)
             overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.stats_under_enter, R.anim.stats_exit)
         }
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
-        }
-        val backdrop = View(this).apply { setBackgroundColor(paper) }
+        window.useAuroraSystemBars()
+        val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        val back = glassBackButton(ink, backdrop, paper) { finish() }
+        val back = glassBackButton(ink, backdrop) { finish() }
         toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
             marginStart = dp(10)
             marginEnd = dp(8)
@@ -63,26 +53,17 @@ class ReadingHistoryActivity : AppCompatActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(52)))
-        root.addView(View(this).apply { setBackgroundColor(0xFFE9DED4.toInt()) }, LinearLayout.LayoutParams(-1, dp(1)))
+        root.addView(View(this).apply { setBackgroundColor(getColor(R.color.shelf_separator)) },
+            LinearLayout.LayoutParams(-1, dp(1)))
 
-        val segments = LinearLayout(this).apply {
-            background = rounded(0xFFF0EBE5.toInt())
-            setPadding(dp(2), dp(2), dp(2), dp(2))
+        val segments = readerSegments(
+            Filter.entries.map { getString(it.title) }, filter.ordinal, ReaderPrefs.THEME_PURE_WHITE,
+            backdrop, getString(R.string.history_title), trackColor = getColor(R.color.shelf_track)
+        ) { index ->
+            filter = Filter.entries[index]
+            refresh(resetScroll = true)
         }
-        segmentLabels = Filter.entries.map { option ->
-            label(getString(option.title), 13f, ink).apply {
-                gravity = Gravity.CENTER
-                isFocusable = true
-                setOnClickListener {
-                    if (filter != option) {
-                        filter = option
-                        refresh(resetScroll = true)
-                    }
-                }
-                segments.addView(this, LinearLayout.LayoutParams(0, -1, 1f))
-            }
-        }
-        root.addView(segments, LinearLayout.LayoutParams(-1, dp(36)).apply {
+        root.addView(segments, LinearLayout.LayoutParams(-1, dp(44)).apply {
             setMargins(dp(16), dp(14), dp(16), 0)
         })
         count = label("", 12f, muted).apply { setPadding(dp(16), dp(11), dp(16), dp(10)) }
@@ -125,14 +106,6 @@ class ReadingHistoryActivity : AppCompatActivity() {
     }
 
     private fun refresh(resetScroll: Boolean = false) {
-        Filter.entries.forEachIndexed { index, option ->
-            val selected = option == filter
-            segmentLabels[index].apply {
-                isSelected = selected
-                background = if (selected) rounded(paper) else null
-                setTextColor(if (selected) accent else ink)
-            }
-        }
         val times = ReadingStats.bookTimes(this)
         val books = BookStore.load(this).filter {
             (it.lastRead > 0L || it.progress > 0f || it.id in times) &&
@@ -194,6 +167,5 @@ class ReadingHistoryActivity : AppCompatActivity() {
         setTextColor(color)
     }
 
-    private fun rounded(color: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(4).toFloat() }
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
