@@ -81,6 +81,13 @@ object DocumentLoader {
     private fun isChapterHeading(line: String): Boolean =
         line.length <= 40 && headingRegex.containsMatchIn(line)
 
+    /** 判断标题是否像正文章节，用于把 EPUB 目录里的前置内容挡在目录外。 */
+    private val chapterTitleRegex = Regex(
+        "^(第[0-9零〇一二三四五六七八九十百千两]{1,8}[章回节卷篇]|序章|序言|楔子|引子|尾声|终章|后记|番外" +
+            "|chapter|part|prologue|epilogue|interlude)",
+        RegexOption.IGNORE_CASE
+    )
+
     private fun loadEpub(book: Book): Document? {
         val dir = File(book.path).canonicalFile
         val info = EpubParser.readInfo(dir) ?: return null
@@ -139,7 +146,12 @@ object DocumentLoader {
             unnamed.forEach { (ordinal, offset) -> marks.add(ChapterMark("第${ordinal}章", offset)) }
         }
         if (builder.isBlank()) return null
-        return Document(book.title, builder.toString().trimEnd(), marks, images)
+        // 目录只留正文：封面、制作信息、彩页、印刷版目录、封底这些不进目录。
+        // 取「第一个像章节标题」到「最后一个」之间的区间；一个都认不出就整本都留，避免目录空掉。
+        val firstChapter = marks.indexOfFirst { chapterTitleRegex.containsMatchIn(it.title) }
+        val lastChapter = marks.indexOfLast { chapterTitleRegex.containsMatchIn(it.title) }
+        val visibleMarks = if (firstChapter >= 0) marks.subList(firstChapter, lastChapter + 1) else marks
+        return Document(book.title, builder.toString().trimEnd(), visibleMarks, images)
     }
 
     private class ImageReference(val asset: ReadingImage) : ColorDrawable(Color.TRANSPARENT) {
