@@ -619,6 +619,7 @@ class ReaderActivity : AppCompatActivity() {
         okText: String?,
         rows: List<String> = emptyList(),
         highlightIndex: Int = -1,
+        showBack: Boolean = false,
         onPick: ((Int) -> Unit)? = null
     ) {
         val dialog = Dialog(this)
@@ -672,6 +673,17 @@ class ReaderActivity : AppCompatActivity() {
             cancel.text = getString(R.string.cancel)
             cancel.setGlassClickListener { dialog.dismiss() }
         }
+        if (showBack) {
+            // 目录这类长列表用左上角返回，底部取消按钮去掉，省一行高度
+            cancel.visibility = View.GONE
+            val back = content.findViewById<GlassActionButton>(R.id.cardBack)
+            back.visibility = View.VISIBLE
+            back.useBackIcon(ink)
+            back.tintColor = ReaderPrefs.chrome(theme)
+            back.setGlassClickListener { dialog.dismiss() }
+            val bottom = (16 * resources.displayMetrics.density).toInt()
+            content.setPadding(content.paddingLeft, content.paddingTop, content.paddingRight, bottom)
+        }
         content.background = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = 26 * resources.displayMetrics.density
             setColor((ReaderPrefs.chrome(theme) and 0xFFFFFF) or 0xB8000000.toInt())
@@ -698,6 +710,12 @@ class ReaderActivity : AppCompatActivity() {
         }
         cancel.backdropSource = pageView
         cancel.usePopupOptics()
+        if (showBack) {
+            content.findViewById<GlassActionButton>(R.id.cardBack).apply {
+                backdropSource = pageView
+                usePopupOptics()
+            }
+        }
         glass.addView(content, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
@@ -750,7 +768,8 @@ class ReaderActivity : AppCompatActivity() {
             null,
             null,
             rows,
-            highlightIndex = current
+            highlightIndex = current,
+            showBack = true
         ) { index ->
             val offset = doc.chapters[index].offset
             pageView.seekToOffset(offset)
