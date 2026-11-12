@@ -780,22 +780,182 @@ class ReaderActivity : AppCompatActivity() {
         val rows = doc.chapters.map { it.title }
         // 停在书名/前言这类章节之前的内容时返回 -1，此时目录不高亮任何一行
         val current = doc.chapterIndexAt(pageView.currentOffset())
-        showGlassNotice(
-            getString(R.string.reader_catalog),
-            null,
-            null,
-            rows,
-            highlightIndex = current,
-            showBack = true
-        ) { index ->
-            val offset = doc.chapters[index].offset
-            pageView.seekToOffset(offset)
-            saveProgress(lastProgress)
-        }
+        showCatalogPanel(doc, rows, current)
     }
 
-    /** 把内容包进玻璃卡片并居中弹出，尺寸沿用目录弹窗那一套。 */
-    private fun showGlassPanel(content: View, widthDp: Int = 345): Dialog {
+    /** 目录面板：顶部「目录 / 书签」两个标签，共用一个玻璃卡片。 */
+    private fun showCatalogPanel(doc: Document, rows: List<String>, current: Int) {
+        val ink = ReaderPrefs.ink(theme)
+        val soft = ReaderPrefs.softInk(theme)
+        val accent = getColor(R.color.shelf_tab_selected)
+        val card = cardSurface()
+        val dialogRef = arrayOfNulls<Dialog>(1)
+
+        // 顶部：返回 + 两个标签（选中项加红色下划线）
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val back = GlassActionButton(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            useBackIcon(ink, 18)
+            usePopupOptics()
+            tintColor = ReaderPrefs.chrome(theme)
+            backdropSource = pageView
+            frosted = GlassStyle.load(this@ReaderActivity) == GlassStyle.FROSTED
+            setGlassClickListener { dialogRef[0]?.dismiss() }
+        }
+        header.addView(back)
+        val tabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        header.addView(tabRow)
+        // 右侧留出与返回按钮等宽的空位，让标签整体居中
+        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(36), dp(1)) })
+        card.addView(header)
+
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            isVerticalScrollBarEnabled = false
+        }
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(content, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        card.addView(scroll)
+
+        val labels = listOf("目录", "书签")
+        val underline = mutableListOf<View>()
+        var selected = 0
+
+        fun renderBookmarks() {
+            content.removeAllViews()
+            val marks = BookmarkStore.load(this, book.id)
+            if (marks.isEmpty()) {
+                content.addView(TextView(this).apply {
+                    text = "暂无书签"
+                    setTextColor(soft)
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(28), 0, dp(28))
+                })
+                return
+            }
+            marks.forEach { mark ->
+                content.addView(TextView(this).apply {
+                    text = mark.chapter.ifEmpty {
+                        val percent = mark.offset * 100 / doc.text.length.coerceAtLeast(1)
+                        "位置 $percent%"
+                    }
+                    setTextColor(ink)
+                    textSize = 14f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(4), dp(12), dp(4), 0)
+                    isClickable = true
+                    setOnClickListener {
+                        pageView.seekToOffset(mark.offset)
+                        saveProgress(lastProgress)
+                        dialogRef[0]?.dismiss()
+                    }
+                    setOnLongClickListener {
+                        BookmarkStore.remove(this@ReaderActivity, book.id, mark.id)
+                        Toast.makeText(this@ReaderActivity, "已删除书签", Toast.LENGTH_SHORT).show()
+                        renderBookmarks()
+                        true
+                    }
+                })
+                content.addView(TextView(this).apply {
+                    text = mark.snippet.ifEmpty { "…" }
+                    setTextColor(soft)
+                    textSize = 11f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(4), dp(2), dp(4), dp(12))
+                })
+            }
+        }
+
+        fun renderChapters() {
+            content.removeAllViews()
+            rows.forEachIndexed { index, label ->
+                content.addView(TextView(this).apply {
+                    text = label
+                    gravity = Gravity.CENTER
+                    textSize = 15f
+                    if (index == current) {
+                        setTextColor(accent)
+                        typeface = Typeface.DEFAULT_BOLD
+                    } else {
+                        setTextColor(ink)
+                    }
+                    val pad = dp(14)
+                    setPadding(pad, pad, pad, pad)
+                    isClickable = true
+                    setOnClickListener {
+                        pageView.seekToOffset(doc.chapters[index].offset)
+                        saveProgress(lastProgress)
+                        dialogRef[0]?.dismiss()
+                    }
+                })
+            }
+        }
+
+        fun selectTab(index: Int) {
+            selected = index
+            labels.forEachIndexed { i, _ ->
+                (tabRow.getChildAt(i) as LinearLayout).getChildAt(0).let { view ->
+                    val label = view as TextView
+                    label.setTextColor(if (i == index) ink else soft)
+                    label.typeface = if (i == index) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                }
+                (tabRow.getChildAt(i) as LinearLayout).getChildAt(1).visibility =
+                    if (i == index) View.VISIBLE else View.INVISIBLE
+            }
+            if (index == 0) renderChapters() else renderBookmarks()
+        }
+
+        labels.forEachIndexed { index, label ->
+            val tab = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                isClickable = true
+                setPadding(dp(14), 0, dp(14), 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener { selectTab(index) }
+            }
+            tab.addView(TextView(this).apply {
+                text = label
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setTextColor(soft)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            })
+            val line = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(18), dp(2))
+                    .apply { topMargin = dp(5) }
+                setBackgroundColor(accent)
+                visibility = View.INVISIBLE
+            }
+            tab.addView(line)
+            underline.add(line)
+            tabRow.addView(tab)
+        }
+
+        selectTab(selected)
+        dialogRef[0] = showGlassPanel(card)
+    }
+
+    /** 把内容包进玻璃卡片弹出；anchorTopEnd 时贴在右上角，否则居中。 */
+    private fun showGlassPanel(content: View, widthDp: Int = 345, anchorTopEnd: Boolean = false): Dialog {
         val dialog = Dialog(this)
         val glass = AgslGlassView(this).apply {
             useControlOptics(26f)
@@ -812,12 +972,20 @@ class ReaderActivity : AppCompatActivity() {
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
             setDimAmount(0f)
             setWindowAnimations(R.style.SettingsCardAnimation)
-            setGravity(Gravity.CENTER)
+            setGravity(if (anchorTopEnd) Gravity.TOP or Gravity.END else Gravity.CENTER)
         }
         val available = pageView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
         val width = minOf(dp(widthDp), (available - dp(32)).coerceAtLeast(1))
+        if (anchorTopEnd) {
+            dialog.window?.setLayout(width, FrameLayout.LayoutParams.WRAP_CONTENT)
+            dialog.window?.setGravity(Gravity.TOP or Gravity.END)
+            dialog.window?.attributes = dialog.window?.attributes?.apply {
+                x = dp(12)
+                y = dp(58)
+            }
+        }
         dialog.show()
-        dialog.window?.setLayout(width, FrameLayout.LayoutParams.WRAP_CONTENT)
+        if (!anchorTopEnd) dialog.window?.setLayout(width, FrameLayout.LayoutParams.WRAP_CONTENT)
         GlassStyle.load(this).applyTo(glass)
         return dialog
     }
@@ -895,65 +1063,12 @@ class ReaderActivity : AppCompatActivity() {
             }
         }
 
-        // 书签区：加了就刷新，点条目跳过去，长按删除
-        val sectionTitle = TextView(this).apply {
-            setTextColor(soft)
-            textSize = 11f
-            setPadding(dp(2), dp(16), 0, dp(4))
-        }
-        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply {
-            addView(rows, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            isVerticalScrollBarEnabled = false
-        }
-
-        fun renderBookmarks() {
-            rows.removeAllViews()
-            val marks = BookmarkStore.load(this@ReaderActivity, book.id)
-            sectionTitle.visibility = if (marks.isEmpty()) View.GONE else View.VISIBLE
-            sectionTitle.text = "书签 · ${marks.size}"
-            // 列表超过一定高度就内部滚动
-            scroll.layoutParams = (scroll.layoutParams as LinearLayout.LayoutParams).apply {
-                height = if (marks.size > 4) dp(200) else ViewGroup.LayoutParams.WRAP_CONTENT
-            }
-            marks.forEach { mark ->
-                rows.addView(TextView(this@ReaderActivity).apply {
-                    text = buildString {
-                        if (mark.chapter.isNotEmpty()) append(mark.chapter).append("　")
-                        append(mark.snippet)
-                    }
-                    setTextColor(ink)
-                    textSize = 12f
-                    maxLines = 2
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(dp(2), dp(9), dp(2), dp(9))
-                    isClickable = true
-                    setOnClickListener {
-                        pageView.seekToOffset(mark.offset)
-                        saveProgress(lastProgress)
-                        dialogRef[0]?.dismiss()
-                    }
-                    setOnLongClickListener {
-                        BookmarkStore.remove(this@ReaderActivity, book.id, mark.id)
-                        Toast.makeText(this@ReaderActivity, "已删除书签", Toast.LENGTH_SHORT).show()
-                        renderBookmarks()
-                        true
-                    }
-                })
-            }
-        }
-
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(14), 0, 0)
         }
         actions.addView(
-            action(R.drawable.ic_bookmark, "添加书签") {
-                addBookmarkNow { renderBookmarks() }
-            },
+            action(R.drawable.ic_bookmark, "添加书签") { addBookmarkNow() },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         actions.addView(
@@ -964,21 +1079,21 @@ class ReaderActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         card.addView(actions)
-        card.addView(sectionTitle)
-        card.addView(scroll)
-        renderBookmarks()
 
-        dialogRef[0] = showGlassPanel(card)
+        dialogRef[0] = showGlassPanel(card, anchorTopEnd = true)
     }
 
-    private fun addBookmarkNow(onChanged: () -> Unit) {
+    private fun addBookmarkNow() {
         val doc = document ?: return
         val offset = pageView.currentOffset()
         val added = BookmarkStore.add(
             this, book.id, offset, doc.chapterAt(offset), snippetAround(doc.text, offset, 0)
         )
-        Toast.makeText(this, if (added) "已添加书签" else "这个位置已经有书签了", Toast.LENGTH_SHORT).show()
-        if (added) onChanged()
+        Toast.makeText(
+            this,
+            if (added) "已添加书签，可在目录的「书签」里查看" else "这个位置已经有书签了",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     /** 取一段上下文，换行折成空格，供书签和搜索结果展示。 */
@@ -995,14 +1110,46 @@ class ReaderActivity : AppCompatActivity() {
 
     // ---------- 本书内全文搜索 ----------
 
+    // ---------- 本书内全文搜索：输入后点「搜索」，带历史 ----------
+
+    private fun searchHistoryKey() = "history_" + book.id
+
+    private fun loadSearchHistory(): MutableList<String> {
+        val raw = getSharedPreferences("reader_search", MODE_PRIVATE)
+            .getString(searchHistoryKey(), null) ?: return mutableListOf()
+        return runCatching {
+            val array = org.json.JSONArray(raw)
+            MutableList(array.length()) { array.getString(it) }
+        }.getOrDefault(mutableListOf())
+    }
+
+    private fun rememberSearch(keyword: String) {
+        val list = loadSearchHistory()
+        list.remove(keyword)
+        list.add(0, keyword)
+        val trimmed = list.take(20)
+        val array = org.json.JSONArray()
+        trimmed.forEach { array.put(it) }
+        getSharedPreferences("reader_search", MODE_PRIVATE).edit()
+            .putString(searchHistoryKey(), array.toString()).apply()
+    }
+
+    private fun clearSearchHistory() {
+        getSharedPreferences("reader_search", MODE_PRIVATE).edit()
+            .remove(searchHistoryKey()).apply()
+    }
+
     private fun showFullTextSearch() {
         val doc = document ?: return
         val ink = ReaderPrefs.ink(theme)
         val soft = ReaderPrefs.softInk(theme)
+        val accent = getColor(R.color.shelf_tab_selected)
         val card = cardSurface()
+        val dialogRef = arrayOfNulls<Dialog>(1)
 
+        // 标题
         card.addView(TextView(this).apply {
-            text = "搜全文"
+            text = "全文搜索"
             setTextColor(ink)
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
@@ -1010,48 +1157,131 @@ class ReaderActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(12))
         })
 
+        // 输入行：放大镜 + 输入框 + 右侧「搜索」
+        val inputRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = getDrawable(R.drawable.bg_glass_chip)
+            setPadding(dp(12), 0, dp(4), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+            )
+        }
+        inputRow.addView(android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_header_search)
+            setColorFilter(soft)
+            layoutParams = LinearLayout.LayoutParams(dp(16), dp(16))
+        })
         val input = EditText(this).apply {
-            hint = "输入关键词，搜索本书内容"
+            hint = "搜索本书内容"
             setTextColor(ink)
             setHintTextColor(soft)
             textSize = 14f
             maxLines = 1
             setSingleLine()
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            background = getDrawable(R.drawable.bg_glass_chip)
+            setBackground(null)
+            setPadding(dp(8), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
         }
-        card.addView(input)
+        inputRow.addView(input)
+        val searchButton = TextView(this).apply {
+            text = "搜索"
+            setTextColor(accent)
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            isClickable = true
+        }
+        inputRow.addView(searchButton)
+        card.addView(inputRow)
 
-        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply {
-            addView(results, ViewGroup.LayoutParams(
+        // 历史区：标题 + 垃圾桶 + 词条
+        val historyBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val historyHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(16), 0, dp(8))
+        }
+        historyHeader.addView(TextView(this).apply {
+            text = "搜索历史"
+            setTextColor(ink)
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        val trash = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_trash)
+            setColorFilter(soft)
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
+            isClickable = true
+            setPadding(dp(2), dp(2), dp(2), dp(2))
+        }
+        historyHeader.addView(trash)
+        historyBox.addView(historyHeader)
+        val historyChips = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        historyBox.addView(historyChips)
+        card.addView(historyBox)
+
+        val resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val resultsScroll = ScrollView(this).apply {
+            addView(resultsBox, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
             isVerticalScrollBarEnabled = false
+            visibility = View.GONE
         }
-        card.addView(scroll)
+        card.addView(resultsScroll)
 
-        val dialogRef = arrayOfNulls<Dialog>(1)
+        var runSearchRef: ((String) -> Unit)? = null
 
-        fun search(query: String) {
-            results.removeAllViews()
-            val keyword = query.trim()
-            if (keyword.isEmpty()) {
-                scroll.layoutParams = (scroll.layoutParams as LinearLayout.LayoutParams).apply {
-                    height = ViewGroup.LayoutParams.WRAP_CONTENT
-                }
+        fun renderHistory() {
+            historyChips.removeAllViews()
+            val items = loadSearchHistory()
+            historyBox.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+            trash.visibility = if (items.isEmpty()) View.INVISIBLE else View.VISIBLE
+            items.forEach { word ->
+                historyChips.addView(TextView(this@ReaderActivity).apply {
+                    text = word
+                    setTextColor(ink)
+                    textSize = 12f
+                    background = getDrawable(R.drawable.bg_glass_chip)
+                    setPadding(dp(12), dp(7), dp(12), dp(7))
+                    val lp = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                    lp.bottomMargin = dp(6)
+                    layoutParams = lp
+                    isClickable = true
+                    setOnClickListener {
+                        input.setText(word)
+                        input.setSelection(word.length)
+                        runSearchRef?.invoke(word)
+                    }
+                })
+            }
+        }
+
+        fun runSearch(keyword: String) {
+            val query = keyword.trim()
+            resultsBox.removeAllViews()
+            if (query.isEmpty()) {
+                resultsScroll.visibility = View.GONE
+                renderHistory()
                 return
             }
+            rememberSearch(query)
+            historyBox.visibility = View.GONE
+            resultsScroll.visibility = View.VISIBLE
             val text = doc.text
-            var cursor = text.indexOf(keyword, 0)
+            var cursor = text.indexOf(query, 0)
             var found = 0
-            while (cursor >= 0 && found < 50) {
+            while (cursor >= 0 && found < 500) {
                 val at = cursor
-                results.addView(TextView(this@ReaderActivity).apply {
-                    setText(snippetAround(text, at, keyword.length))
+                resultsBox.addView(TextView(this@ReaderActivity).apply {
+                    setText(snippetAround(text, at, query.length))
                     setTextColor(ink)
                     textSize = 12f
                     maxLines = 2
@@ -1065,28 +1295,47 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 })
                 found++
-                cursor = text.indexOf(keyword, at + keyword.length.coerceAtLeast(1))
+                cursor = text.indexOf(query, at + query.length.coerceAtLeast(1))
             }
             if (found == 0) {
-                results.addView(TextView(this@ReaderActivity).apply {
-                    setText("没有找到「$keyword」")
+                resultsBox.addView(TextView(this@ReaderActivity).apply {
+                    setText("没有找到「$query」")
                     setTextColor(soft)
                     textSize = 12f
                     gravity = Gravity.CENTER
-                    setPadding(0, dp(16), 0, dp(16))
+                    setPadding(0, dp(20), 0, dp(20))
                 })
             }
-            scroll.layoutParams = (scroll.layoutParams as LinearLayout.LayoutParams).apply {
-                height = dp(240)
-            }
+            resultsScroll.layoutParams = (resultsScroll.layoutParams as LinearLayout.LayoutParams)
+                .apply { height = dp(300) }
         }
 
+        // 清空输入时回到历史，但不自动触发搜索
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: Editable?) = search(s?.toString().orEmpty())
+            override fun afterTextChanged(s: Editable?) {
+                if (s.isNullOrEmpty()) {
+                    resultsBox.removeAllViews()
+                    resultsScroll.visibility = View.GONE
+                    renderHistory()
+                }
+            }
         })
 
+        runSearchRef = { runSearch(it) }
+        searchButton.setOnClickListener { runSearch(input.text?.toString().orEmpty()) }
+        input.setOnEditorActionListener { _, _, _ ->
+            runSearch(input.text?.toString().orEmpty())
+            true
+        }
+        trash.setOnClickListener {
+            clearSearchHistory()
+            renderHistory()
+            Toast.makeText(this@ReaderActivity, "已清空搜索历史", Toast.LENGTH_SHORT).show()
+        }
+
+        renderHistory()
         dialogRef[0] = showGlassPanel(card)
         input.requestFocus()
     }
