@@ -855,15 +855,11 @@ class ReaderActivity : AppCompatActivity() {
         header.addView(jumpButton)
         card.addView(header)
 
-        val scroll = ScrollView(this).apply {
+        // SoftScrollView：更缓的 fling 减速 + 边缘回弹 + 常驻滚动条
+        val scroll = SoftScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            // 常驻滚动条：系统滚动条默认滚动时才出现且会淡出
-            isVerticalScrollBarEnabled = true
-            isScrollbarFadingEnabled = false
-            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
-            scrollBarSize = dp(4)
         }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(content, ViewGroup.LayoutParams(
@@ -1389,17 +1385,13 @@ class ReaderActivity : AppCompatActivity() {
         card.addView(historyBox)
 
         val resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val resultsScroll = ScrollView(this).apply {
+        val resultsScroll = SoftScrollView(this).apply {
             addView(resultsBox, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            isVerticalScrollBarEnabled = true
-            isScrollbarFadingEnabled = false
-            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
-            scrollBarSize = dp(4)
             visibility = View.GONE
         }
         card.addView(resultsScroll)
