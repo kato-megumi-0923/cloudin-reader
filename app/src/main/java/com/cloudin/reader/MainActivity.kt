@@ -482,7 +482,8 @@ class MainActivity : AppCompatActivity() {
         if (currentGroup != null) {
             btnBack.visibility = View.VISIBLE
             title.text = currentGroup!!.name
-            bottomBarView.visibility = View.GONE
+            // 分组内保留悬浮底栏，和书架一致；点其它 tab 会顺带退出分组
+            bottomBarView.visibility = View.VISIBLE
         } else {
             btnBack.visibility = View.GONE
             title.text = when (currentTab) {
