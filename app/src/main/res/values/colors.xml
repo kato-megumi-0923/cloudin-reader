@@ -16,7 +16,7 @@
     <color name="shelf_track">#24000000</color>
     <color name="shelf_separator">#60FFFFFF</color>
     <color name="shelf_meta">#9A9A9A</color>
-    <color name="shelf_tab_selected">#9C5015</color>
+    <color name="shelf_tab_selected">#C0392B</color>
     <color name="card_bg">#FAFAFA</color>
     <color name="card_border">#E6E7E9</color>
 </resources>
