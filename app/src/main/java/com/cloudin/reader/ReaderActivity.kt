@@ -261,6 +261,7 @@ class ReaderActivity : AppCompatActivity() {
         txtChapter.visibility = if (ReaderPrefs.showChapter(this)) View.VISIBLE else View.GONE
         txtProgress.setTextColor(soft)
         backButton.setBackIconColor(ink)
+        if (searchTopChip != null) styleSearchChrome()
         menuButton.textView.setTextColor(ink)
         menuButton.tintColor = ReaderPrefs.chrome(theme)
         val sliderTint = ColorStateList.valueOf(ink)
@@ -321,12 +322,21 @@ class ReaderActivity : AppCompatActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun toggleBars() {
+        // 搜索态用自带的顶部/底部条，不再叠加常规工具栏
+        if (searchQuery != null) return
         barsVisible = !barsVisible
         pageView.setChromeVisible(barsVisible)
         if (!barsVisible) hideSettingsPanel()
         scheduleAutoReading()
         animateBar(topArea, barsVisible)
         animateBar(bottomArea, barsVisible)
+    }
+
+    private fun hideNormalChromeForSearch() {
+        if (searchQuery == null) return
+        barsVisible = false
+        pageView.setChromeVisible(false)
+        listOf(topArea, bottomArea, settingsPanel).forEach { it.visibility = View.GONE }
     }
 
     private fun animateBar(view: View, show: Boolean) {
@@ -1429,94 +1439,121 @@ class ReaderActivity : AppCompatActivity() {
         pageView.setSearchHighlight(query, getColor(R.color.search_highlight))
         buildSearchChrome()
         showSearchChrome(true)
+        hideNormalChromeForSearch()
         updateSearchChrome()
         gotoMatch(searchIndex, announce = false)
     }
 
+    private var searchClose: TextView? = null
+    private val searchNavItems = mutableListOf<TextView>()
+
     private fun buildSearchChrome() {
         val root = findViewById<FrameLayout>(R.id.root)
-        val ink = ReaderPrefs.ink(theme)
-        val soft = ReaderPrefs.softInk(theme)
-        val pill = { radius: Int ->
-            GradientDrawable().apply {
-                cornerRadius = dp(radius).toFloat()
-                setColor((ReaderPrefs.chrome(theme) and 0xFFFFFF) or 0xE0000000.toInt())
-            }
-        }
         if (searchTopChip == null) {
             val rootInsets = ViewCompat.getRootWindowInsets(root)
             val topInset = rootInsets?.getInsets(WindowInsetsCompat.Type.systemBars())?.top ?: 0
             val bottomInsetPx = rootInsets?.getInsets(WindowInsetsCompat.Type.systemBars())?.bottom ?: 0
-            val chip = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(8), dp(4), dp(8))
-                background = pill(20)
+
+            // 顶栏：文字绝对居中，右侧放计数和关闭
+            val chip = FrameLayout(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(26), Gravity.TOP
                 ).apply {
                     leftMargin = dp(12)
                     rightMargin = dp(12)
-                    topMargin = dp(8) + topInset
+                    topMargin = dp(6) + topInset
                 }
             }
             searchLabel = TextView(this).apply {
-                textSize = 12f
-                setTextColor(ink)
+                textSize = 10.5f
+                gravity = Gravity.CENTER
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding(dp(44), 0, dp(44), 0)
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    Gravity.CENTER
+                )
+            }
+            val right = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    Gravity.END
+                )
             }
             searchCounter = TextView(this).apply {
-                textSize = 11f
-                setTextColor(soft)
-                setPadding(dp(8), 0, dp(8), 0)
+                textSize = 9.5f
+                setPadding(dp(4), 0, dp(2), 0)
             }
-            val close = TextView(this).apply {
+            searchClose = TextView(this).apply {
                 text = "✕"
-                textSize = 14f
-                setTextColor(ink)
+                textSize = 11f
                 gravity = Gravity.CENTER
-                setPadding(dp(10), dp(4), dp(10), dp(4))
+                setPadding(dp(8), 0, dp(10), 0)
                 isClickable = true
                 setOnClickListener { exitSearchMode() }
             }
+            right.addView(searchCounter)
+            right.addView(searchClose)
             chip.addView(searchLabel)
-            chip.addView(searchCounter)
-            chip.addView(close)
+            chip.addView(right)
             root.addView(chip)
             searchTopChip = chip
 
+            // 底栏：三段等分
             val nav = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                background = pill(22)
                 layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(26), Gravity.BOTTOM
                 ).apply {
                     leftMargin = dp(12)
                     rightMargin = dp(12)
-                    bottomMargin = dp(28) + bottomInsetPx
+                    bottomMargin = dp(18) + bottomInsetPx
                 }
             }
             fun item(label: String, action: () -> Unit): TextView = TextView(this@ReaderActivity).apply {
                 text = label
-                textSize = 13f
+                textSize = 10.5f
                 gravity = Gravity.CENTER
-                setTextColor(ink)
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
                 isClickable = true
                 setOnClickListener { action() }
             }
-            nav.addView(item("⟲ 原进度") {
+            searchNavItems.add(item("⟲ 原进度") {
                 pageView.seekToOffset(searchReturnOffset)
                 saveProgress(lastProgress)
             })
-            nav.addView(item("← 上一个") { stepMatch(-1) })
-            nav.addView(item("下一个 →") { stepMatch(1) })
+            searchNavItems.add(item("← 上一个") { stepMatch(-1) })
+            searchNavItems.add(item("下一个 →") { stepMatch(1) })
+            searchNavItems.forEach { nav.addView(it) }
             root.addView(nav)
             searchNavBar = nav
         }
+        styleSearchChrome()
+    }
+
+    /** 搜索态两条栏跟随当前主题配色（切换夜间时也会重新调用）。 */
+    private fun styleSearchChrome() {
+        val surface = (ReaderPrefs.chrome(theme) and 0xFFFFFF) or 0xE0000000.toInt()
+        val ink = ReaderPrefs.ink(theme)
+        val soft = ReaderPrefs.softInk(theme)
+        val radius = dp(13).toFloat()
+        searchTopChip?.background = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(surface)
+        }
+        searchNavBar?.background = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(surface)
+        }
+        searchLabel?.setTextColor(ink)
+        searchCounter?.setTextColor(soft)
+        searchClose?.setTextColor(ink)
+        searchNavItems.forEach { it.setTextColor(ink) }
     }
 
     private fun showSearchChrome(visible: Boolean) {

@@ -65,7 +65,7 @@ internal class Paginator(
         return PreparedLayout(text, ranges, size)
     }
 
-    private val highlightSpans = mutableListOf<android.text.style.BackgroundColorSpan>()
+    private val highlightSpans = mutableListOf<TightHighlightSpan>()
 
     /** 全文搜索：把 pageText 里的关键词标上底色，不需要重新分页（不影响排版尺寸）。 */
     fun setSearchHighlight(keyword: String?, color: Int) {
@@ -78,7 +78,7 @@ internal class Paginator(
             var index = hay.indexOf(keyword)
             var guard = 0
             while (index >= 0 && guard < 1000) {
-                val span = android.text.style.BackgroundColorSpan(color)
+                val span = TightHighlightSpan(color)
                 spannable.setSpan(
                     span, index, index + keyword.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
