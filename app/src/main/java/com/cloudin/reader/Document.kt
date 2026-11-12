@@ -88,7 +88,10 @@ object DocumentLoader {
         val marks = mutableListOf<ChapterMark>()
         val images = mutableListOf<InlineImage>()
         val knownImages = mutableMapOf<String, ReadingImage?>()
+        val unnamed = mutableListOf<Pair<Int, Int>>()
+        var spineIndex = 0
         for (chapter in info.chapters) {
+            val ordinal = ++spineIndex
             val html = runCatching { chapter.file.readText() }.getOrNull() ?: continue
             val body = htmlBody(html)
             val spanned = runCatching {
@@ -120,8 +123,20 @@ object DocumentLoader {
             }
             appendText(position, text.length)
             if (chapterText.isBlank()) continue
-            marks.add(ChapterMark(extractTitle(html) ?: chapter.title, builder.length))
+            // 目录给的标题最准，其次从正文找 h1~h3/title。
+            // 两样都没有的多半是书名页、彩页、印刷版目录这类前置内容，不占目录条目；
+            // 只有当整本一个标题都没读出来时，才退回「第N章」编号。
+            val title = chapter.title ?: extractTitle(html)
+            if (title != null) {
+                marks.add(ChapterMark(title, builder.length))
+            } else {
+                unnamed.add(ordinal to builder.length)
+            }
             builder.append(chapterText).append("\n\n")
+        }
+        if (marks.isEmpty()) {
+            // 整本都没有可用标题，退回按 spine 顺序编号，至少还能导航
+            unnamed.forEach { (ordinal, offset) -> marks.add(ChapterMark("第${ordinal}章", offset)) }
         }
         if (builder.isBlank()) return null
         return Document(book.title, builder.toString().trimEnd(), marks, images)

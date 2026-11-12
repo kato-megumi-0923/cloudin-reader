@@ -9,7 +9,8 @@ import java.io.StringReader
 import java.util.zip.ZipFile
 import javax.xml.parsers.DocumentBuilderFactory
 
-data class EpubChapter(val title: String, val file: File)
+/** title 为 null 表示目录里没给名字，由调用方决定兜底文案。 */
+data class EpubChapter(val title: String?, val file: File)
 
 data class EpubInfo(
     val title: String,
@@ -85,6 +86,9 @@ object EpubParser {
         }
 
         // spine -> chapters
+        // 章节名优先取目录（toc.ncx / nav.xhtml），因为不少电子书正文里没有 h1~h3，
+        // 连 <title> 都是空的，只能靠目录拿到「第一章 …」这样的真名字。
+        val tocTitles = readTocTitles(dir, opfDir, doc, items)
         val chapters = mutableListOf<EpubChapter>()
         val spineNodes = doc.getElementsByTagName("itemref")
         for (i in 0 until spineNodes.length) {
@@ -94,7 +98,7 @@ object EpubParser {
             if (item.mediaType != null && !item.mediaType.contains("html")) continue
             val f = resolveInside(dir, opfDir, item.href) ?: continue
             if (!f.isFile) continue
-            chapters.add(EpubChapter("第${chapters.size + 1}章", f))
+            chapters.add(EpubChapter(tocTitles[f.absolutePath], f))
         }
         if (chapters.isEmpty()) return null
 
@@ -115,6 +119,79 @@ object EpubParser {
         val dir = File(book.path)
         return readInfo(dir)?.chapters ?: emptyList()
     }
+
+    /**
+     * 读出目录里的章节名：文件绝对路径 → 标题。
+     * 先找 EPUB2 的 toc.ncx，没有再用 EPUB3 的 nav.xhtml。
+     */
+    private fun readTocTitles(
+        root: File,
+        opfDir: File,
+        doc: org.w3c.dom.Document,
+        items: Map<String, ManifestItem>
+    ): Map<String, String> {
+        val titles = mutableMapOf<String, String>()
+
+        val ncxItem = items.values.firstOrNull { it.mediaType?.contains("dtbncx") == true }
+            ?: items.values.firstOrNull { it.href.endsWith(".ncx", ignoreCase = true) }
+        val ncxFile = ncxItem?.let { resolveInside(root, opfDir, it.href) }
+        if (ncxFile?.isFile == true) {
+            runCatching {
+                val ncx = readXml(ncxFile)
+                val points = ncx.getElementsByTagName("navPoint")
+                for (i in 0 until points.length) {
+                    val point = points.item(i) as? Element ?: continue
+                    val label = childText(point, "navLabel", "text") ?: continue
+                    val src = childAttr(point, "content", "src") ?: continue
+                    val file = resolveInside(root, opfDir, src.substringBefore('#')) ?: continue
+                    titles.putIfAbsent(file.absolutePath, label)
+                }
+            }
+        }
+        if (titles.isNotEmpty()) return titles
+
+        val navItem = items.values.firstOrNull { it.properties?.contains("nav") == true }
+        val navFile = navItem?.let { resolveInside(root, opfDir, it.href) }
+        if (navFile?.isFile == true) {
+            runCatching {
+                val html = navFile.readText()
+                val tocBlock = Regex(
+                    "<nav[^>]*epub:type\\s*=\\s*[\"']toc[\"'][^>]*>(.*?)</nav>",
+                    setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+                ).find(html)?.groupValues?.get(1) ?: return@runCatching
+                Regex(
+                    "<a\\b[^>]*href\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
+                    setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+                ).findAll(tocBlock).forEach { match ->
+                    val label = match.groupValues[2].replace(Regex("<[^>]+>"), "")
+                        .trim().replace(Regex("\\s+"), " ")
+                    if (label.isEmpty()) return@forEach
+                    val file = resolveInside(root, opfDir, match.groupValues[1].substringBefore('#'))
+                        ?: return@forEach
+                    titles.putIfAbsent(file.absolutePath, label)
+                }
+            }
+        }
+        return titles
+    }
+
+    private fun childElement(parent: Element, tag: String): Element? {
+        val nodes = parent.childNodes
+        for (i in 0 until nodes.length) {
+            val node = nodes.item(i)
+            if (node is Element && node.tagName.equals(tag, ignoreCase = true)) return node
+        }
+        return null
+    }
+
+    private fun childText(parent: Element, vararg path: String): String? {
+        var current: Element = parent
+        for (tag in path) current = childElement(current, tag) ?: return null
+        return current.textContent?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun childAttr(parent: Element, tag: String, attribute: String): String? =
+        childElement(parent, tag)?.getAttribute(attribute)?.takeIf { it.isNotBlank() }
 
     private fun parseContainer(container: File): String? {
         return try {
