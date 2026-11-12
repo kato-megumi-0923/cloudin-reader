@@ -832,8 +832,27 @@ class ReaderActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         header.addView(tabRow)
-        // 右侧留出与返回按钮等宽的空位，让标签整体居中
-        header.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(36), dp(1)) })
+
+        // 右侧：目录跳转按钮（去底部 / 去顶部 / 去当前 循环切换）
+        val jumpIcon = android.widget.ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+            setColorFilter(ink)
+        }
+        val jumpLabel = TextView(this).apply {
+            textSize = 9f
+            setTextColor(soft)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(2), 0, 0)
+        }
+        val jumpButton = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.WRAP_CONTENT)
+            isClickable = true
+            addView(jumpIcon)
+            addView(jumpLabel)
+        }
+        header.addView(jumpButton)
         card.addView(header)
 
         val scroll = ScrollView(this).apply {
@@ -925,8 +944,11 @@ class ReaderActivity : AppCompatActivity() {
             }
         }
 
+        var currentRow: View? = null
+
         fun renderChapters() {
             content.removeAllViews()
+            currentRow = null
             rows.forEachIndexed { index, label ->
                 content.addView(TextView(this).apply {
                     text = label
@@ -946,9 +968,59 @@ class ReaderActivity : AppCompatActivity() {
                         saveProgress(lastProgress)
                         dialogRef[0]?.dismiss()
                     }
-                })
+                }.also { if (index == current) currentRow = it })
             }
         }
+
+        // 跳转按钮三态循环：底部 → 顶部 → 当前 → 底部；手动滚动后回到「当前」
+        var jumpState = 0
+        var autoScrolling = false
+
+        fun applyJumpState() {
+            val icon = when (jumpState) {
+                0 -> R.drawable.ic_jump_bottom
+                1 -> R.drawable.ic_jump_top
+                else -> R.drawable.ic_jump_current
+            }
+            jumpIcon.setImageResource(icon)
+            jumpLabel.text = when (jumpState) {
+                0 -> "去底部"
+                1 -> "去顶部"
+                else -> "去当前"
+            }
+        }
+
+        fun smoothTo(target: Int) {
+            autoScrolling = true
+            scroll.smoothScrollTo(0, target.coerceAtLeast(0))
+            scroll.postDelayed({ autoScrolling = false }, 450)
+        }
+
+        jumpButton.setOnClickListener {
+            when (jumpState) {
+                0 -> {
+                    smoothTo((scroll.getChildAt(0)?.height ?: 0) - scroll.height)
+                    jumpState = 1
+                }
+                1 -> {
+                    smoothTo(0)
+                    jumpState = 2
+                }
+                else -> {
+                    // 当前章滚到第一个，方便继续往下看
+                    smoothTo(currentRow?.top ?: 0)
+                    jumpState = 0
+                }
+            }
+            applyJumpState()
+        }
+        scroll.setOnScrollChangeListener { _, _, _, _, _ ->
+            if (!autoScrolling && jumpState != 2) {
+                jumpState = 2
+                applyJumpState()
+            }
+        }
+        applyJumpState()
 
         fun selectTab(index: Int) {
             selected = index
@@ -961,6 +1033,7 @@ class ReaderActivity : AppCompatActivity() {
                 (tabRow.getChildAt(i) as LinearLayout).getChildAt(1).visibility =
                     if (i == index) View.VISIBLE else View.INVISIBLE
             }
+            jumpButton.visibility = if (index == 0) View.VISIBLE else View.INVISIBLE
             if (index == 0) renderChapters() else renderBookmarks()
         }
 
