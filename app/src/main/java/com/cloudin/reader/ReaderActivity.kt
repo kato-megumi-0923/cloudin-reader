@@ -618,6 +618,7 @@ class ReaderActivity : AppCompatActivity() {
         message: String?,
         okText: String?,
         rows: List<String> = emptyList(),
+        highlightIndex: Int = -1,
         onPick: ((Int) -> Unit)? = null
     ) {
         val dialog = Dialog(this)
@@ -635,12 +636,19 @@ class ReaderActivity : AppCompatActivity() {
         }
         val container = content.findViewById<LinearLayout>(R.id.cardRows)
         val chapterScroll = container.parent as android.widget.ScrollView
+        val rowViews = ArrayList<TextView>(rows.size)
         rows.forEachIndexed { index, label ->
             val tv = TextView(this)
             tv.text = label
             tv.gravity = Gravity.CENTER
             tv.textSize = 15f
-            tv.setTextColor(ink)
+            // 当前章标红加粗，一眼能看出读到哪
+            if (index == highlightIndex) {
+                tv.setTextColor(getColor(R.color.shelf_tab_selected))
+                tv.setTypeface(tv.typeface, android.graphics.Typeface.BOLD)
+            } else {
+                tv.setTextColor(ink)
+            }
             val v = (14 * resources.displayMetrics.density).toInt()
             tv.setPadding(v, v, v, v)
             tv.isClickable = true
@@ -649,6 +657,7 @@ class ReaderActivity : AppCompatActivity() {
                 onPick?.invoke(index)
             }
             container.addView(tv)
+            rowViews.add(tv)
         }
         val cancel = content.findViewById<GlassActionButton>(R.id.cardCancel)
         cancel.textView.setTextColor(ink)
@@ -701,6 +710,13 @@ class ReaderActivity : AppCompatActivity() {
         dialogWindow?.setGravity(Gravity.CENTER)
         dialog.show()
         dialogWindow?.setLayout(dialogWidth, FrameLayout.LayoutParams.WRAP_CONTENT)
+        if (highlightIndex in rowViews.indices) {
+            // 当前章可能在列表深处，打开时直接滚到它附近
+            val target = rowViews[highlightIndex]
+            chapterScroll.post {
+                chapterScroll.scrollTo(0, (target.top - (chapterScroll.height - target.height) / 2).coerceAtLeast(0))
+            }
+        }
         GlassStyle.load(this).applyTo(glass)
     }
     private fun showCatalog() {
@@ -727,7 +743,15 @@ class ReaderActivity : AppCompatActivity() {
             return
         }
         val rows = doc.chapters.map { it.title }
-        showGlassNotice(getString(R.string.reader_catalog), null, null, rows) { index ->
+        // 停在书名/前言这类章节之前的内容时，落在 -1，按第一章处理，避免目录里一行都不标
+        val current = doc.chapterIndexAt(pageView.currentOffset()).coerceAtLeast(0)
+        showGlassNotice(
+            getString(R.string.reader_catalog),
+            null,
+            null,
+            rows,
+            highlightIndex = current
+        ) { index ->
             val offset = doc.chapters[index].offset
             pageView.seekToOffset(offset)
             saveProgress(lastProgress)

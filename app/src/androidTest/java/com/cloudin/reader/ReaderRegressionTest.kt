@@ -279,6 +279,26 @@ class ReaderRegressionTest {
         charset = null
     )
 
+    /** 目录里要能定位当前章：偏移落在哪一章的区间内就返回哪一章的下标。 */
+    @Test fun chapterIndexAtFindsCurrentChapter() {
+        val text = "前言前前言前第001章 甲\n正文\n第002章 乙\n正文"
+        val first = text.indexOf("第001章")
+        val second = text.indexOf("第002章")
+        val doc = Document(
+            "测试",
+            text,
+            listOf(ChapterMark("第001章 甲", first), ChapterMark("第002章 乙", second))
+        )
+        assertEquals(-1, doc.chapterIndexAt(0))
+        assertEquals(0, doc.chapterIndexAt(first))
+        assertEquals(0, doc.chapterIndexAt(second - 1))
+        assertEquals(1, doc.chapterIndexAt(second))
+        assertEquals(1, doc.chapterIndexAt(text.length))
+        assertEquals("", doc.chapterAt(0))
+        assertEquals("第001章 甲", doc.chapterAt(first))
+        assertEquals("第002章 乙", doc.chapterAt(second + 3))
+    }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private lateinit var root: File
     private lateinit var context: Context

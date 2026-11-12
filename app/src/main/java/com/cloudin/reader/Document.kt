@@ -18,13 +18,16 @@ data class Document(
     val chapters: List<ChapterMark>,
     val images: List<InlineImage> = emptyList()
 ) {
-    fun chapterAt(offset: Int): String {
-        var title = ""
-        for (c in chapters) {
-            if (c.offset <= offset) title = c.title else break
+    fun chapterIndexAt(offset: Int): Int {
+        var index = -1
+        for (i in chapters.indices) {
+            if (chapters[i].offset <= offset) index = i else break
         }
-        return title
+        return index
     }
+
+    fun chapterAt(offset: Int): String =
+        chapters.getOrNull(chapterIndexAt(offset))?.title ?: ""
 }
 
 object DocumentLoader {
