@@ -1110,6 +1110,38 @@ class ReaderActivity : AppCompatActivity() {
 
     // ---------- 本书内全文搜索 ----------
 
+    /** 取命中位置所在的整句（以句末标点和换行为界，限制长度避免整段过长）。 */
+    private fun sentenceAround(text: CharSequence, offset: Int, matchLength: Int): String {
+        val stops = charArrayOf('。', '！', '？', '…', '；', '\n')
+        var start = offset
+        while (start > 0 && offset - start < 80 && text[start - 1] !in stops) start--
+        var end = offset + matchLength
+        while (end < text.length && end - (offset + matchLength) < 120 && text[end] !in stops) end++
+        if (end < text.length) end++
+        return text.subSequence(start, end).toString().replace('\n', ' ').trim()
+    }
+
+    /** 把句子里的关键词标成强调色并加粗。 */
+    private fun highlightKeyword(sentence: String, keyword: String, color: Int): CharSequence {
+        val spannable = android.text.SpannableString(sentence)
+        if (keyword.isEmpty()) return spannable
+        var index = sentence.indexOf(keyword)
+        while (index >= 0) {
+            spannable.setSpan(
+                android.text.style.ForegroundColorSpan(color),
+                index, index + keyword.length,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            spannable.setSpan(
+                android.text.style.StyleSpan(Typeface.BOLD),
+                index, index + keyword.length,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            index = sentence.indexOf(keyword, index + keyword.length)
+        }
+        return spannable
+    }
+
     // ---------- 本书内全文搜索：输入后点「搜索」，带历史 ----------
 
     private fun searchHistoryKey() = "history_" + book.id
@@ -1236,24 +1268,41 @@ class ReaderActivity : AppCompatActivity() {
         card.addView(resultsScroll)
 
         var runSearchRef: ((String) -> Unit)? = null
+        val chipPaint = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 12f * resources.displayMetrics.scaledDensity
+        }
+        val rowWidth = dp(305).toFloat()
 
+        // 历史词条：先横向排满一行再换行
         fun renderHistory() {
             historyChips.removeAllViews()
             val items = loadSearchHistory()
             historyBox.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
             trash.visibility = if (items.isEmpty()) View.INVISIBLE else View.VISIBLE
+            var row: LinearLayout? = null
+            var used = 0f
             items.forEach { word ->
-                historyChips.addView(TextView(this@ReaderActivity).apply {
+                val chipWidth = chipPaint.measureText(word) + dp(24)
+                if (row == null || (used > 0f && used + chipWidth > rowWidth)) {
+                    val created = LinearLayout(this@ReaderActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { bottomMargin = dp(8) }
+                    }
+                    historyChips.addView(created)
+                    row = created
+                    used = 0f
+                }
+                row?.addView(TextView(this@ReaderActivity).apply {
                     text = word
                     setTextColor(ink)
                     textSize = 12f
                     background = getDrawable(R.drawable.bg_glass_chip)
                     setPadding(dp(12), dp(7), dp(12), dp(7))
-                    val lp = LinearLayout.LayoutParams(
+                    layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                    lp.bottomMargin = dp(6)
-                    layoutParams = lp
+                    ).apply { marginEnd = dp(8) }
                     isClickable = true
                     setOnClickListener {
                         input.setText(word)
@@ -1261,6 +1310,7 @@ class ReaderActivity : AppCompatActivity() {
                         runSearchRef?.invoke(word)
                     }
                 })
+                used += chipWidth + dp(8)
             }
         }
 
@@ -1280,13 +1330,31 @@ class ReaderActivity : AppCompatActivity() {
             var found = 0
             while (cursor >= 0 && found < 500) {
                 val at = cursor
+                // 章节名：正文之前的命中显示「开篇」，其余按位置百分比兜底
+                val chapter = doc.chapterAt(at).ifEmpty {
+                    val firstChapter = doc.chapters.firstOrNull()?.offset ?: -1
+                    if (firstChapter < 0) "本书"
+                    else if (at < firstChapter) "开篇"
+                    else "位置 " + (at * 100 / text.length.coerceAtLeast(1)) + "%"
+                }
                 resultsBox.addView(TextView(this@ReaderActivity).apply {
-                    setText(snippetAround(text, at, query.length))
+                    setText(chapter)
+                    setTextColor(ink)
+                    textSize = 13f
+                    typeface = Typeface.DEFAULT_BOLD
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(2), dp(14), dp(2), dp(6))
+                })
+                // 命中所在的那一句，关键词标红
+                val sentence = sentenceAround(text, at, query.length)
+                resultsBox.addView(TextView(this@ReaderActivity).apply {
+                    setText(highlightKeyword(sentence, query, accent))
                     setTextColor(ink)
                     textSize = 12f
-                    maxLines = 2
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(dp(2), dp(10), dp(2), dp(10))
+                    setLineSpacing(dp(4).toFloat(), 1f)
+                    background = getDrawable(R.drawable.bg_glass_chip)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
                     isClickable = true
                     setOnClickListener {
                         pageView.seekToOffset(at)
@@ -1309,19 +1377,6 @@ class ReaderActivity : AppCompatActivity() {
             resultsScroll.layoutParams = (resultsScroll.layoutParams as LinearLayout.LayoutParams)
                 .apply { height = dp(300) }
         }
-
-        // 清空输入时回到历史，但不自动触发搜索
-        input.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: Editable?) {
-                if (s.isNullOrEmpty()) {
-                    resultsBox.removeAllViews()
-                    resultsScroll.visibility = View.GONE
-                    renderHistory()
-                }
-            }
-        })
 
         runSearchRef = { runSearch(it) }
         searchButton.setOnClickListener { runSearch(input.text?.toString().orEmpty()) }
