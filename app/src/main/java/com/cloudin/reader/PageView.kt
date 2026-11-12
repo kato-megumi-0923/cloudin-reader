@@ -104,6 +104,12 @@ class PageView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** 搜索态：高亮正文里的关键词；传 null 清除。 */
+    fun setSearchHighlight(keyword: String?, color: Int) {
+        paginator.setSearchHighlight(keyword, color)
+        invalidate()
+    }
+
     fun setDoubleColumns(enabled: Boolean) {
         val requestedColumns = if (enabled) 2 else 1
         if (requestedColumns == columns) return

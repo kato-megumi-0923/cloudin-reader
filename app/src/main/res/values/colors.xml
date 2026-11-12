@@ -17,6 +17,7 @@
     <color name="shelf_separator">#60FFFFFF</color>
     <color name="shelf_meta">#9A9A9A</color>
     <color name="shelf_tab_selected">#C0392B</color>
+    <color name="search_highlight">#99F2B01E</color>
     <color name="card_bg">#FAFAFA</color>
     <color name="card_border">#E6E7E9</color>
 </resources>

@@ -43,6 +43,16 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var topBar: View
     private lateinit var backButton: GlassActionButton
     private lateinit var menuButton: GlassActionButton
+
+    // 搜索态
+    private var searchQuery: String? = null
+    private var searchMatches: List<Int> = emptyList()
+    private var searchIndex = 0
+    private var searchReturnOffset = 0
+    private var searchTopChip: View? = null
+    private var searchNavBar: View? = null
+    private var searchLabel: TextView? = null
+    private var searchCounter: TextView? = null
     private lateinit var settingsPanel: AgslGlassView
     private var panelSection: Panel? = null
     private var panelHeightAnimator: ValueAnimator? = null
@@ -846,16 +856,10 @@ class ReaderActivity : AppCompatActivity() {
                 return
             }
             marks.forEach { mark ->
-                content.addView(TextView(this).apply {
-                    text = mark.chapter.ifEmpty {
-                        val percent = mark.offset * 100 / doc.text.length.coerceAtLeast(1)
-                        "位置 $percent%"
-                    }
-                    setTextColor(ink)
-                    textSize = 14f
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(dp(4), dp(12), dp(4), 0)
+                // 整条（章节名 + 片段）作为一个可点击区域，点片段也要能跳
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(4), dp(12), dp(4), dp(12))
                     isClickable = true
                     setOnClickListener {
                         pageView.seekToOffset(mark.offset)
@@ -868,15 +872,26 @@ class ReaderActivity : AppCompatActivity() {
                         renderBookmarks()
                         true
                     }
+                }
+                row.addView(TextView(this@ReaderActivity).apply {
+                    text = mark.chapter.ifEmpty {
+                        val percent = mark.offset * 100 / doc.text.length.coerceAtLeast(1)
+                        "位置 $percent%"
+                    }
+                    setTextColor(ink)
+                    textSize = 14f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                 })
-                content.addView(TextView(this).apply {
+                row.addView(TextView(this@ReaderActivity).apply {
                     text = mark.snippet.ifEmpty { "…" }
                     setTextColor(soft)
                     textSize = 11f
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(dp(4), dp(2), dp(4), dp(12))
+                    setPadding(0, dp(3), 0, 0)
                 })
+                content.addView(row)
             }
         }
 
@@ -1326,10 +1341,13 @@ class ReaderActivity : AppCompatActivity() {
             historyBox.visibility = View.GONE
             resultsScroll.visibility = View.VISIBLE
             val text = doc.text
+            val matches = mutableListOf<Int>()
             var cursor = text.indexOf(query, 0)
             var found = 0
             while (cursor >= 0 && found < 500) {
                 val at = cursor
+                val matchIndex = found
+                matches.add(at)
                 // 章节名：正文之前的命中显示「开篇」，其余按位置百分比兜底
                 val chapter = doc.chapterAt(at).ifEmpty {
                     val firstChapter = doc.chapters.firstOrNull()?.offset ?: -1
@@ -1357,9 +1375,8 @@ class ReaderActivity : AppCompatActivity() {
                     setPadding(dp(12), dp(10), dp(12), dp(10))
                     isClickable = true
                     setOnClickListener {
-                        pageView.seekToOffset(at)
-                        saveProgress(lastProgress)
                         dialogRef[0]?.dismiss()
+                        enterSearchMode(query, matches, matchIndex)
                     }
                 })
                 found++
@@ -1393,6 +1410,145 @@ class ReaderActivity : AppCompatActivity() {
         renderHistory()
         dialogRef[0] = showGlassPanel(card)
         input.requestFocus()
+    }
+
+    // ---------- 搜索态：正文高亮 + 顶部提示条 + 底部导航 ----------
+
+    private fun enterSearchMode(query: String, matches: List<Int>, index: Int) {
+        if (document == null || matches.isEmpty()) return
+        if (searchQuery == null) searchReturnOffset = pageView.currentOffset()
+        searchQuery = query
+        searchMatches = matches
+        searchIndex = index.coerceIn(0, matches.size - 1)
+        // 搜索态下收起常规顶栏/底栏，只留搜索相关的两条
+        barsVisible = false
+        pageView.setChromeVisible(false)
+        topArea.visibility = View.GONE
+        bottomArea.visibility = View.GONE
+        settingsPanel.visibility = View.GONE
+        pageView.setSearchHighlight(query, getColor(R.color.search_highlight))
+        buildSearchChrome()
+        showSearchChrome(true)
+        updateSearchChrome()
+        gotoMatch(searchIndex, announce = false)
+    }
+
+    private fun buildSearchChrome() {
+        val root = findViewById<FrameLayout>(R.id.root)
+        val ink = ReaderPrefs.ink(theme)
+        val soft = ReaderPrefs.softInk(theme)
+        val pill = { radius: Int ->
+            GradientDrawable().apply {
+                cornerRadius = dp(radius).toFloat()
+                setColor((ReaderPrefs.chrome(theme) and 0xFFFFFF) or 0xE0000000.toInt())
+            }
+        }
+        if (searchTopChip == null) {
+            val rootInsets = ViewCompat.getRootWindowInsets(root)
+            val topInset = rootInsets?.getInsets(WindowInsetsCompat.Type.systemBars())?.top ?: 0
+            val bottomInsetPx = rootInsets?.getInsets(WindowInsetsCompat.Type.systemBars())?.bottom ?: 0
+            val chip = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(8), dp(4), dp(8))
+                background = pill(20)
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP
+                ).apply {
+                    leftMargin = dp(12)
+                    rightMargin = dp(12)
+                    topMargin = dp(8) + topInset
+                }
+            }
+            searchLabel = TextView(this).apply {
+                textSize = 12f
+                setTextColor(ink)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            searchCounter = TextView(this).apply {
+                textSize = 11f
+                setTextColor(soft)
+                setPadding(dp(8), 0, dp(8), 0)
+            }
+            val close = TextView(this).apply {
+                text = "✕"
+                textSize = 14f
+                setTextColor(ink)
+                gravity = Gravity.CENTER
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+                isClickable = true
+                setOnClickListener { exitSearchMode() }
+            }
+            chip.addView(searchLabel)
+            chip.addView(searchCounter)
+            chip.addView(close)
+            root.addView(chip)
+            searchTopChip = chip
+
+            val nav = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = pill(22)
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(44), Gravity.BOTTOM
+                ).apply {
+                    leftMargin = dp(12)
+                    rightMargin = dp(12)
+                    bottomMargin = dp(28) + bottomInsetPx
+                }
+            }
+            fun item(label: String, action: () -> Unit): TextView = TextView(this@ReaderActivity).apply {
+                text = label
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(ink)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+                isClickable = true
+                setOnClickListener { action() }
+            }
+            nav.addView(item("⟲ 原进度") {
+                pageView.seekToOffset(searchReturnOffset)
+                saveProgress(lastProgress)
+            })
+            nav.addView(item("← 上一个") { stepMatch(-1) })
+            nav.addView(item("下一个 →") { stepMatch(1) })
+            root.addView(nav)
+            searchNavBar = nav
+        }
+    }
+
+    private fun showSearchChrome(visible: Boolean) {
+        searchTopChip?.visibility = if (visible) View.VISIBLE else View.GONE
+        searchNavBar?.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
+    private fun updateSearchChrome() {
+        searchLabel?.text = "搜全文「${searchQuery.orEmpty()}」"
+        searchCounter?.text = if (searchMatches.isEmpty()) "" else "${searchIndex + 1}/${searchMatches.size}"
+    }
+
+    private fun stepMatch(delta: Int) {
+        if (searchMatches.isEmpty()) return
+        searchIndex = (searchIndex + delta).mod(searchMatches.size)
+        updateSearchChrome()
+        gotoMatch(searchIndex, announce = true)
+    }
+
+    private fun gotoMatch(index: Int, announce: Boolean) {
+        val offset = searchMatches.getOrNull(index) ?: return
+        pageView.seekToOffset(offset)
+        saveProgress(lastProgress)
+        if (announce) updateSearchChrome()
+    }
+
+    private fun exitSearchMode() {
+        searchQuery = null
+        searchMatches = emptyList()
+        pageView.setSearchHighlight(null, 0)
+        showSearchChrome(false)
+        Toast.makeText(this, "已退出搜索", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveProgress(progress: Float) {

@@ -3,6 +3,7 @@ package com.cloudin.reader
 import android.annotation.SuppressLint
 import android.graphics.Canvas
 import android.text.Layout
+import android.text.Spannable
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.StaticLayout
@@ -62,6 +63,32 @@ internal class Paginator(
                 if (layoutKey != null) cache.write(layoutKey, it)
             }
         return PreparedLayout(text, ranges, size)
+    }
+
+    private val highlightSpans = mutableListOf<android.text.style.BackgroundColorSpan>()
+
+    /** 全文搜索：把 pageText 里的关键词标上底色，不需要重新分页（不影响排版尺寸）。 */
+    fun setSearchHighlight(keyword: String?, color: Int) {
+        if (pageText.isEmpty()) return
+        val spannable = pageText as? Spannable ?: SpannableString(pageText)
+        highlightSpans.forEach { spannable.removeSpan(it) }
+        highlightSpans.clear()
+        if (!keyword.isNullOrEmpty() && color != 0) {
+            val hay = spannable.toString()
+            var index = hay.indexOf(keyword)
+            var guard = 0
+            while (index >= 0 && guard < 1000) {
+                val span = android.text.style.BackgroundColorSpan(color)
+                spannable.setSpan(
+                    span, index, index + keyword.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                highlightSpans.add(span)
+                index = hay.indexOf(keyword, index + keyword.length)
+                guard++
+            }
+        }
+        pageText = spannable
+        clearLayoutCache()
     }
 
     fun apply(layout: PreparedLayout) {
