@@ -743,8 +743,8 @@ class ReaderActivity : AppCompatActivity() {
             return
         }
         val rows = doc.chapters.map { it.title }
-        // 停在书名/前言这类章节之前的内容时，落在 -1，按第一章处理，避免目录里一行都不标
-        val current = doc.chapterIndexAt(pageView.currentOffset()).coerceAtLeast(0)
+        // 停在书名/前言这类章节之前的内容时返回 -1，此时目录不高亮任何一行
+        val current = doc.chapterIndexAt(pageView.currentOffset())
         showGlassNotice(
             getString(R.string.reader_catalog),
             null,
