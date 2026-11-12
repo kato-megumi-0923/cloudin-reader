@@ -1456,20 +1456,20 @@ class ReaderActivity : AppCompatActivity() {
 
             // 顶栏：文字绝对居中，右侧放计数和关闭
             val chip = FrameLayout(this).apply {
+                setPadding(dp(10), dp(8), dp(4), dp(8))
                 layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(26), Gravity.TOP
+                    dp(260), ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 ).apply {
-                    leftMargin = dp(12)
-                    rightMargin = dp(12)
-                    topMargin = dp(6) + topInset
+                    topMargin = dp(8) + topInset
                 }
             }
             searchLabel = TextView(this).apply {
-                textSize = 10.5f
+                textSize = 12f
                 gravity = Gravity.CENTER
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(44), 0, dp(44), 0)
+                setPadding(dp(52), 0, dp(52), 0)
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1486,12 +1486,12 @@ class ReaderActivity : AppCompatActivity() {
                 )
             }
             searchCounter = TextView(this).apply {
-                textSize = 9.5f
+                textSize = 10.5f
                 setPadding(dp(4), 0, dp(2), 0)
             }
             searchClose = TextView(this).apply {
                 text = "✕"
-                textSize = 11f
+                textSize = 13f
                 gravity = Gravity.CENTER
                 setPadding(dp(8), 0, dp(10), 0)
                 isClickable = true
@@ -1508,16 +1508,14 @@ class ReaderActivity : AppCompatActivity() {
             val nav = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(26), Gravity.BOTTOM
+                    dp(260), dp(40), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 ).apply {
-                    leftMargin = dp(12)
-                    rightMargin = dp(12)
-                    bottomMargin = dp(18) + bottomInsetPx
+                    bottomMargin = dp(24) + bottomInsetPx
                 }
             }
             fun item(label: String, action: () -> Unit): TextView = TextView(this@ReaderActivity).apply {
                 text = label
-                textSize = 10.5f
+                textSize = 12.5f
                 gravity = Gravity.CENTER
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
                 isClickable = true
@@ -1541,7 +1539,7 @@ class ReaderActivity : AppCompatActivity() {
         val surface = (ReaderPrefs.chrome(theme) and 0xFFFFFF) or 0xE0000000.toInt()
         val ink = ReaderPrefs.ink(theme)
         val soft = ReaderPrefs.softInk(theme)
-        val radius = dp(13).toFloat()
+        val radius = dp(20).toFloat()
         searchTopChip?.background = GradientDrawable().apply {
             cornerRadius = radius
             setColor(surface)
