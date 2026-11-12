@@ -12,7 +12,6 @@ import android.provider.MediaStore
 import android.view.MotionEvent
 import android.view.View
 import android.view.inspector.WindowInspector
-import android.widget.ScrollView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
@@ -31,6 +30,18 @@ import java.util.zip.ZipOutputStream
 /** Optional end-to-end check of the explicit fixtures imported through the system picker. */
 @RunWith(AndroidJUnit4::class)
 class DeviceSmokeTest {
+
+    /** 目录面板没有稳定的控件 id，用 SoftScrollView 实例类型定位它的窗口。 */
+    private fun findSoftScroll(view: View): SoftScrollView? {
+        if (view is SoftScrollView) return view
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) {
+                findSoftScroll(view.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
     @Test fun epubIllustrationRendersAndOpenedBookRemainsVisibleOnReturn() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -49,7 +60,8 @@ class DeviceSmokeTest {
                 add("META-INF/container.xml", """<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>""".toByteArray())
                 add("book.opf", """<package><metadata><title>${source.nameWithoutExtension}</title></metadata><manifest><item id="one" href="text/one.xhtml" media-type="application/xhtml+xml"/><item id="two" href="text/two.xhtml" media-type="application/xhtml+xml"/><item id="art" href="img/test%20image.png" media-type="image/png"/></manifest><spine><itemref idref="one"/><itemref idref="two"/></spine></package>""".toByteArray())
                 add("text/one.xhtml", """<html><body><h1>第一章</h1><p>测试正文</p><img src="../img/test%20image.png"/></body></html>""".toByteArray())
-                add("text/two.xhtml", """<html><body><svg><image xlink:href="../img/test%20image.png"/></svg></body></html>""".toByteArray())
+                // 无 toc，标题只能从正文/页面 <title> 读；页面带 <title> 才会被收录进目录
+                add("text/two.xhtml", """<html><head><title>第二章</title></head><body><svg><image xlink:href="../img/test%20image.png"/></svg></body></html>""".toByteArray())
                 add("img/test image.png", bytes)
             }
             (BookStore.import(context, Uri.fromFile(source), source.name) as ImportResult.Added).book
@@ -205,17 +217,17 @@ class DeviceSmokeTest {
                     activity.findViewById<View>(openPanel).performClick()
                     activity.findViewById<View>(R.id.tabCatalog).performClick()
                 }
-                var catalogWindow: View? = null
+                var catalogScroll: SoftScrollView? = null
                 val layoutDeadline = System.currentTimeMillis() + 5000
-                while (catalogWindow == null && System.currentTimeMillis() < layoutDeadline) {
+                while (catalogScroll == null && System.currentTimeMillis() < layoutDeadline) {
                     instrumentation.runOnMainSync {
-                        catalogWindow = WindowInspector.getGlobalWindowViews().firstOrNull {
-                            (it.findViewById<View>(R.id.cardRows)?.height ?: 0) > 0
-                        }
+                        catalogScroll = WindowInspector.getGlobalWindowViews()
+                            .firstNotNullOfOrNull { findSoftScroll(it) }?.takeIf { it.height > 0 }
                     }
-                    if (catalogWindow == null) Thread.sleep(50)
+                    if (catalogScroll == null) Thread.sleep(50)
                 }
-                val window = checkNotNull(catalogWindow) { "Catalog did not finish laying out" }
+                val scroll = checkNotNull(catalogScroll) { "Catalog did not finish laying out" }
+                val window = scroll.rootView
                 var height = 0
                 var failure: Throwable? = null
                 instrumentation.runOnMainSync {
@@ -223,19 +235,33 @@ class DeviceSmokeTest {
                         listOf(R.id.topArea, R.id.bottomArea, R.id.settingsPanel).forEach { id ->
                             assertEquals(View.GONE, activity.findViewById<View>(id).visibility)
                         }
-                        val scroll = window.findViewById<View>(R.id.cardRows).parent as ScrollView
                         val attributes = window.layoutParams as android.view.WindowManager.LayoutParams
                         assertEquals(R.style.SettingsCardAnimation, attributes.windowAnimations)
-                        val content = scroll.parent as View
-                        height = content.height
-                        assertTrue(height in 1..(page.height * 0.66f).toInt())
+                        val card = scroll.parent as View
+                        height = card.height
+                        assertTrue(height in 1..activity.resources.displayMetrics.heightPixels)
                         assertEquals(chapterCount > 1, scroll.canScrollVertically(1))
-                        val cancel = window.findViewById<View>(R.id.cardCancel)
-                        assertTrue(cancel.isShown && cancel.height > 0)
-                        assertTrue(cancel.performClick())
+                        // 目录/书签双标签：切到书签应显示空态
+                        val bookmarkTabs = arrayListOf<View>()
+                        window.findViewsWithText(bookmarkTabs, "书签", View.FIND_VIEWS_WITH_TEXT)
+                        assertTrue((bookmarkTabs.first().parent as View).performClick())
+                        val empties = arrayListOf<View>()
+                        window.findViewsWithText(empties, "暂无书签", View.FIND_VIEWS_WITH_TEXT)
+                        assertTrue(empties.isNotEmpty())
                     } catch (t: Throwable) { failure = t }
                 }
                 failure?.let { throw it }
+                // 返回键应关闭目录面板
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                val closeDeadline = System.currentTimeMillis() + 2000
+                var closed = false
+                while (!closed && System.currentTimeMillis() < closeDeadline) {
+                    instrumentation.runOnMainSync {
+                        closed = WindowInspector.getGlobalWindowViews().none { findSoftScroll(it) != null }
+                    }
+                    if (!closed) Thread.sleep(50)
+                }
+                assertTrue("Back key did not close the catalog", closed)
                 return height
             } finally {
                 instrumentation.runOnMainSync { activity.finish() }
