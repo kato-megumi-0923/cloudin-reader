@@ -1089,8 +1089,8 @@ class ReaderActivity : AppCompatActivity() {
 
         // 两个动作：添加书签 / 搜全文
         val dialogRef = arrayOfNulls<Dialog>(1)
-        fun action(iconRes: Int, label: String, onClick: () -> Unit): TextView {
-            val icon = getDrawable(iconRes)?.mutate()?.apply { setTint(ink) }
+        fun action(iconRes: Int, label: String, tint: Int = ink, onClick: () -> Unit): TextView {
+            val icon = getDrawable(iconRes)?.mutate()?.apply { setTint(tint) }
             return TextView(this).apply {
                 text = label
                 setTextColor(soft)
@@ -1108,8 +1108,17 @@ class ReaderActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(14), 0, 0)
         }
+        // 当前页已加书签时按钮变成「已加书签」，再点就是删除
+        val accent = getColor(R.color.shelf_tab_selected)
+        val existing = BookmarkStore.findNear(this, book.id, pageView.currentOffset())
         actions.addView(
-            action(R.drawable.ic_bookmark, "添加书签") { addBookmarkNow() },
+            action(
+                R.drawable.ic_bookmark,
+                if (existing != null) "已加书签" else "添加书签",
+                if (existing != null) accent else ink
+            ) {
+                toggleBookmarkNow(existing) { dialogRef[0]?.dismiss() }
+            },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         actions.addView(
@@ -1124,17 +1133,24 @@ class ReaderActivity : AppCompatActivity() {
         dialogRef[0] = showGlassPanel(card, anchorTopEnd = true)
     }
 
-    private fun addBookmarkNow() {
+    /** 一键切换：没书签就加，已有就删；两种情况都会关掉卡片。 */
+    private fun toggleBookmarkNow(existing: Bookmark?, onDone: () -> Unit) {
         val doc = document ?: return
-        val offset = pageView.currentOffset()
-        val added = BookmarkStore.add(
-            this, book.id, offset, doc.chapterAt(offset), snippetAround(doc.text, offset, 0)
-        )
-        Toast.makeText(
-            this,
-            if (added) "已添加书签，可在目录的「书签」里查看" else "这个位置已经有书签了",
-            Toast.LENGTH_SHORT
-        ).show()
+        if (existing != null) {
+            BookmarkStore.remove(this, book.id, existing.id)
+            Toast.makeText(this, "已删除书签", Toast.LENGTH_SHORT).show()
+        } else {
+            val offset = pageView.currentOffset()
+            val added = BookmarkStore.add(
+                this, book.id, offset, doc.chapterAt(offset), snippetAround(doc.text, offset, 0)
+            )
+            Toast.makeText(
+                this,
+                if (added) "已添加书签，可在目录的「书签」里查看" else "这个位置已经有书签了",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        onDone()
     }
 
     /** 取一段上下文，换行折成空格，供书签和搜索结果展示。 */

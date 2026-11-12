@@ -51,6 +51,11 @@ object BookmarkStore {
         return true
     }
 
+    /** 当前阅读位置附近是否已有书签；用于把按钮切成「已加书签」。 */
+    @Synchronized
+    fun findNear(context: Context, bookId: String, offset: Int): Bookmark? =
+        load(context, bookId).firstOrNull { abs(it.offset - offset) < SAME_POSITION_WINDOW }
+
     @Synchronized
     fun remove(context: Context, bookId: String, id: String): Boolean {
         val all = readAll(context)
