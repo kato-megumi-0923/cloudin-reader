@@ -33,7 +33,9 @@ class SoftScrollView @JvmOverloads constructor(
         val viewport = height - paddingTop - paddingBottom
         if (viewport <= 0) return
         val maxScroll = (getChildAt(0).height - viewport).coerceAtLeast(0)
-        scroller.fling(scrollY, 0, 0, velocityY, 0, 0, 0, maxScroll)
+        // 参数顺序：startX, startY, velocityX, velocityY, minX, maxX, minY, maxY
+        // startY 必须是当前 scrollY，否则每次惯性滑动都会从顶部重新开始
+        scroller.fling(0, scrollY, 0, velocityY, 0, 0, 0, maxScroll)
         postInvalidateOnAnimation()
     }
 
