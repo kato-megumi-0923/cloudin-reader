@@ -17,10 +17,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -38,6 +42,7 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var bottomArea: View
     private lateinit var topBar: View
     private lateinit var backButton: GlassActionButton
+    private lateinit var menuButton: GlassActionButton
     private lateinit var settingsPanel: AgslGlassView
     private var panelSection: Panel? = null
     private var panelHeightAnimator: ValueAnimator? = null
@@ -101,6 +106,7 @@ class ReaderActivity : AppCompatActivity() {
         bottomArea = findViewById(R.id.bottomArea)
         topBar = findViewById(R.id.topBar)
         backButton = findViewById(R.id.backBar)
+        menuButton = findViewById(R.id.btnMenu)
         settingsPanel = findViewById(R.id.settingsPanel)
         rootView.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
             if (r - l != or - ol || b - t != ob - ot) {
@@ -133,6 +139,15 @@ class ReaderActivity : AppCompatActivity() {
             ReaderPrefs.ink(theme), pageView, ReaderPrefs.background(theme),
             controlRadiusDp = 23f, iconSizeDp = 24
         ) { finish() }
+        menuButton.run {
+            text = "···"
+            textView.textSize = 15f
+            contentDescription = getString(R.string.reader_book_info)
+            useControlOptics(23f)
+            backdropSource = pageView
+            frosted = GlassStyle.load(this@ReaderActivity) == GlassStyle.FROSTED
+            setGlassClickListener { showBookInfo() }
+        }
         setupBottomTabs()
 
         pageView.onCenterTap = { toggleBars() }
@@ -236,6 +251,8 @@ class ReaderActivity : AppCompatActivity() {
         txtChapter.visibility = if (ReaderPrefs.showChapter(this)) View.VISIBLE else View.GONE
         txtProgress.setTextColor(soft)
         backButton.setBackIconColor(ink)
+        menuButton.textView.setTextColor(ink)
+        menuButton.tintColor = ReaderPrefs.chrome(theme)
         val sliderTint = ColorStateList.valueOf(ink)
         seekBar.progressTintList = sliderTint
         seekBar.thumbTintList = sliderTint
@@ -775,6 +792,303 @@ class ReaderActivity : AppCompatActivity() {
             pageView.seekToOffset(offset)
             saveProgress(lastProgress)
         }
+    }
+
+    /** 把内容包进玻璃卡片并居中弹出，尺寸沿用目录弹窗那一套。 */
+    private fun showGlassPanel(content: View, widthDp: Int = 345): Dialog {
+        val dialog = Dialog(this)
+        val glass = AgslGlassView(this).apply {
+            useControlOptics(26f)
+            usePopupOptics()
+            backdropSource = pageView
+            tintColor = ReaderPrefs.chrome(theme)
+        }
+        glass.addView(content, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+        dialog.setContentView(glass)
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0f)
+            setWindowAnimations(R.style.SettingsCardAnimation)
+            setGravity(Gravity.CENTER)
+        }
+        val available = pageView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val width = minOf(dp(widthDp), (available - dp(32)).coerceAtLeast(1))
+        dialog.show()
+        dialog.window?.setLayout(width, FrameLayout.LayoutParams.WRAP_CONTENT)
+        GlassStyle.load(this).applyTo(glass)
+        return dialog
+    }
+
+    private fun cardSurface(): LinearLayout {
+        val chrome = ReaderPrefs.chrome(theme)
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(12))
+            background = GradientDrawable().apply {
+                cornerRadius = 26 * resources.displayMetrics.density
+                setColor((chrome and 0xFFFFFF) or 0xB8000000.toInt())
+            }
+        }
+    }
+
+    // ---------- 书籍信息：书名 / 作者 / 添加书签 / 搜全文 ----------
+
+    private fun showBookInfo() {
+        document ?: return
+        val ink = ReaderPrefs.ink(theme)
+        val soft = ReaderPrefs.softInk(theme)
+        val card = cardSurface()
+
+        // 头部：封面 + 书名 + 作者
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        head.addView(BookCoverView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(64))
+            bind(book)
+        })
+        val texts = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginStart = dp(12) }
+        }
+        texts.addView(TextView(this).apply {
+            text = book.title
+            setTextColor(ink)
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        val author = book.author.trim()
+        if (author.isNotEmpty()) {
+            texts.addView(TextView(this).apply {
+                text = author
+                setTextColor(soft)
+                textSize = 12f
+                setPadding(0, dp(4), 0, 0)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+        }
+        head.addView(texts)
+        card.addView(head)
+
+        // 两个动作：添加书签 / 搜全文
+        val dialogRef = arrayOfNulls<Dialog>(1)
+        fun action(iconRes: Int, label: String, onClick: () -> Unit): TextView {
+            val icon = getDrawable(iconRes)?.mutate()?.apply { setTint(ink) }
+            return TextView(this).apply {
+                text = label
+                setTextColor(soft)
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setCompoundDrawablesWithIntrinsicBounds(null, icon, null, null)
+                compoundDrawablePadding = dp(8)
+                setPadding(dp(6), dp(14), dp(6), dp(10))
+                isClickable = true
+                setOnClickListener { onClick() }
+            }
+        }
+
+        // 书签区：加了就刷新，点条目跳过去，长按删除
+        val sectionTitle = TextView(this).apply {
+            setTextColor(soft)
+            textSize = 11f
+            setPadding(dp(2), dp(16), 0, dp(4))
+        }
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            addView(rows, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            isVerticalScrollBarEnabled = false
+        }
+
+        fun renderBookmarks() {
+            rows.removeAllViews()
+            val marks = BookmarkStore.load(this@ReaderActivity, book.id)
+            sectionTitle.visibility = if (marks.isEmpty()) View.GONE else View.VISIBLE
+            sectionTitle.text = "书签 · ${marks.size}"
+            // 列表超过一定高度就内部滚动
+            scroll.layoutParams = (scroll.layoutParams as LinearLayout.LayoutParams).apply {
+                height = if (marks.size > 4) dp(200) else ViewGroup.LayoutParams.WRAP_CONTENT
+            }
+            marks.forEach { mark ->
+                rows.addView(TextView(this@ReaderActivity).apply {
+                    text = buildString {
+                        if (mark.chapter.isNotEmpty()) append(mark.chapter).append("　")
+                        append(mark.snippet)
+                    }
+                    setTextColor(ink)
+                    textSize = 12f
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(2), dp(9), dp(2), dp(9))
+                    isClickable = true
+                    setOnClickListener {
+                        pageView.seekToOffset(mark.offset)
+                        saveProgress(lastProgress)
+                        dialogRef[0]?.dismiss()
+                    }
+                    setOnLongClickListener {
+                        BookmarkStore.remove(this@ReaderActivity, book.id, mark.id)
+                        Toast.makeText(this@ReaderActivity, "已删除书签", Toast.LENGTH_SHORT).show()
+                        renderBookmarks()
+                        true
+                    }
+                })
+            }
+        }
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(14), 0, 0)
+        }
+        actions.addView(
+            action(R.drawable.ic_bookmark, "添加书签") {
+                addBookmarkNow { renderBookmarks() }
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        actions.addView(
+            action(R.drawable.ic_header_search, "搜全文") {
+                dialogRef[0]?.dismiss()
+                showFullTextSearch()
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        card.addView(actions)
+        card.addView(sectionTitle)
+        card.addView(scroll)
+        renderBookmarks()
+
+        dialogRef[0] = showGlassPanel(card)
+    }
+
+    private fun addBookmarkNow(onChanged: () -> Unit) {
+        val doc = document ?: return
+        val offset = pageView.currentOffset()
+        val added = BookmarkStore.add(
+            this, book.id, offset, doc.chapterAt(offset), snippetAround(doc.text, offset, 0)
+        )
+        Toast.makeText(this, if (added) "已添加书签" else "这个位置已经有书签了", Toast.LENGTH_SHORT).show()
+        if (added) onChanged()
+    }
+
+    /** 取一段上下文，换行折成空格，供书签和搜索结果展示。 */
+    private fun snippetAround(text: CharSequence, offset: Int, matchLength: Int): String {
+        val start = (offset - 18).coerceAtLeast(0)
+        val end = (offset + matchLength + 24).coerceAtMost(text.length)
+        val raw = text.subSequence(start, end).toString().replace('\n', ' ').replace('\ufffc', ' ').trim()
+        return buildString {
+            if (start > 0) append('…')
+            append(raw.replace(Regex("\\s+"), " "))
+            if (end < text.length) append('…')
+        }
+    }
+
+    // ---------- 本书内全文搜索 ----------
+
+    private fun showFullTextSearch() {
+        val doc = document ?: return
+        val ink = ReaderPrefs.ink(theme)
+        val soft = ReaderPrefs.softInk(theme)
+        val card = cardSurface()
+
+        card.addView(TextView(this).apply {
+            text = "搜全文"
+            setTextColor(ink)
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        val input = EditText(this).apply {
+            hint = "输入关键词，搜索本书内容"
+            setTextColor(ink)
+            setHintTextColor(soft)
+            textSize = 14f
+            maxLines = 1
+            setSingleLine()
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = getDrawable(R.drawable.bg_glass_chip)
+        }
+        card.addView(input)
+
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            addView(results, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            isVerticalScrollBarEnabled = false
+        }
+        card.addView(scroll)
+
+        val dialogRef = arrayOfNulls<Dialog>(1)
+
+        fun search(query: String) {
+            results.removeAllViews()
+            val keyword = query.trim()
+            if (keyword.isEmpty()) {
+                scroll.layoutParams = (scroll.layoutParams as LinearLayout.LayoutParams).apply {
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT
+                }
+                return
+            }
+            val text = doc.text
+            var cursor = text.indexOf(keyword, 0)
+            var found = 0
+            while (cursor >= 0 && found < 50) {
+                val at = cursor
+                results.addView(TextView(this@ReaderActivity).apply {
+                    setText(snippetAround(text, at, keyword.length))
+                    setTextColor(ink)
+                    textSize = 12f
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(2), dp(10), dp(2), dp(10))
+                    isClickable = true
+                    setOnClickListener {
+                        pageView.seekToOffset(at)
+                        saveProgress(lastProgress)
+                        dialogRef[0]?.dismiss()
+                    }
+                })
+                found++
+                cursor = text.indexOf(keyword, at + keyword.length.coerceAtLeast(1))
+            }
+            if (found == 0) {
+                results.addView(TextView(this@ReaderActivity).apply {
+                    setText("没有找到「$keyword」")
+                    setTextColor(soft)
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(16), 0, dp(16))
+                })
+            }
+            scroll.layoutParams = (scroll.layoutParams as LinearLayout.LayoutParams).apply {
+                height = dp(240)
+            }
+        }
+
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = search(s?.toString().orEmpty())
+        })
+
+        dialogRef[0] = showGlassPanel(card)
+        input.requestFocus()
     }
 
     private fun saveProgress(progress: Float) {

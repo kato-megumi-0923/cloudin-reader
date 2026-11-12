@@ -107,4 +107,5 @@
     <string name="history_no_duration">暂无时长记录</string>
     <string name="history_under_tenth_minute">不足 0.1 分钟</string>
     <string name="history_duration_minutes">%1$.1f 分钟</string>
+    <string name="reader_book_info">书籍信息</string>
 </resources>
