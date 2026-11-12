@@ -840,7 +840,11 @@ class ReaderActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            isVerticalScrollBarEnabled = false
+            // 常驻滚动条：系统滚动条默认滚动时才出现且会淡出
+            isVerticalScrollBarEnabled = true
+            isScrollbarFadingEnabled = false
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            scrollBarSize = dp(4)
         }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(content, ViewGroup.LayoutParams(
@@ -1319,7 +1323,10 @@ class ReaderActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            isVerticalScrollBarEnabled = false
+            isVerticalScrollBarEnabled = true
+            isScrollbarFadingEnabled = false
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            scrollBarSize = dp(4)
             visibility = View.GONE
         }
         card.addView(resultsScroll)
