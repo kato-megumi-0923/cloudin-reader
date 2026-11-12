@@ -1454,15 +1454,21 @@ class ReaderActivity : AppCompatActivity() {
             val topInset = rootInsets?.getInsets(WindowInsetsCompat.Type.systemBars())?.top ?: 0
             val bottomInsetPx = rootInsets?.getInsets(WindowInsetsCompat.Type.systemBars())?.bottom ?: 0
 
-            // 顶栏：文字绝对居中，右侧放计数和关闭
-            val chip = FrameLayout(this).apply {
-                setPadding(dp(10), dp(8), dp(4), dp(8))
+            // 顶栏：真玻璃容器（和阅读底栏同一套 AGSL 材质），文字绝对居中
+            val topGlass = AgslGlassView(this).apply {
+                useControlOptics(20f)
+                tintColor = ReaderPrefs.chrome(theme)
+                backdropSource = pageView
+                frosted = GlassStyle.load(this@ReaderActivity) == GlassStyle.FROSTED
                 layoutParams = FrameLayout.LayoutParams(
                     dp(260), ViewGroup.LayoutParams.WRAP_CONTENT,
                     Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 ).apply {
                     topMargin = dp(8) + topInset
                 }
+            }
+            val chip = FrameLayout(this).apply {
+                setPadding(dp(10), dp(8), dp(4), dp(8))
             }
             searchLabel = TextView(this).apply {
                 textSize = 12f
@@ -1501,17 +1507,27 @@ class ReaderActivity : AppCompatActivity() {
             right.addView(searchClose)
             chip.addView(searchLabel)
             chip.addView(right)
-            root.addView(chip)
-            searchTopChip = chip
+            topGlass.addView(chip, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            root.addView(topGlass)
+            searchTopChip = topGlass
 
-            // 底栏：三段等分
-            val nav = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
+            // 底栏：真玻璃容器，三段等分
+            val navGlass = AgslGlassView(this).apply {
+                useControlOptics(20f)
+                tintColor = ReaderPrefs.chrome(theme)
+                backdropSource = pageView
+                frosted = GlassStyle.load(this@ReaderActivity) == GlassStyle.FROSTED
                 layoutParams = FrameLayout.LayoutParams(
                     dp(260), dp(40), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 ).apply {
                     bottomMargin = dp(24) + bottomInsetPx
                 }
+            }
+            val nav = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
             }
             fun item(label: String, action: () -> Unit): TextView = TextView(this@ReaderActivity).apply {
                 text = label
@@ -1528,25 +1544,27 @@ class ReaderActivity : AppCompatActivity() {
             searchNavItems.add(item("← 上一个") { stepMatch(-1) })
             searchNavItems.add(item("下一个 →") { stepMatch(1) })
             searchNavItems.forEach { nav.addView(it) }
-            root.addView(nav)
-            searchNavBar = nav
+            navGlass.addView(nav, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            root.addView(navGlass)
+            searchNavBar = navGlass
         }
         styleSearchChrome()
     }
 
     /** 搜索态两条栏跟随当前主题配色（切换夜间时也会重新调用）。 */
     private fun styleSearchChrome() {
-        val surface = (ReaderPrefs.chrome(theme) and 0xFFFFFF) or 0xE0000000.toInt()
         val ink = ReaderPrefs.ink(theme)
         val soft = ReaderPrefs.softInk(theme)
-        val radius = dp(20).toFloat()
-        searchTopChip?.background = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(surface)
-        }
-        searchNavBar?.background = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(surface)
+        val frosted = GlassStyle.load(this) == GlassStyle.FROSTED
+        listOfNotNull(searchTopChip, searchNavBar).forEach { bar ->
+            (bar as? AgslGlassView)?.apply {
+                tintColor = ReaderPrefs.chrome(theme)
+                backdropSource = pageView
+                this.frosted = frosted
+            }
         }
         searchLabel?.setTextColor(ink)
         searchCounter?.setTextColor(soft)
