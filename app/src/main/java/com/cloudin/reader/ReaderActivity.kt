@@ -866,24 +866,23 @@ class ReaderActivity : AppCompatActivity() {
                 return
             }
             marks.forEach { mark ->
-                // 整条（章节名 + 片段）作为一个可点击区域，点片段也要能跳
                 val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(4), dp(10), dp(2), dp(10))
+                }
+                // 左侧：章节名 + 片段，点击跳转
+                val texts = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    setPadding(dp(4), dp(12), dp(4), dp(12))
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     isClickable = true
                     setOnClickListener {
                         pageView.seekToOffset(mark.offset)
                         saveProgress(lastProgress)
                         dialogRef[0]?.dismiss()
                     }
-                    setOnLongClickListener {
-                        BookmarkStore.remove(this@ReaderActivity, book.id, mark.id)
-                        Toast.makeText(this@ReaderActivity, "已删除书签", Toast.LENGTH_SHORT).show()
-                        renderBookmarks()
-                        true
-                    }
                 }
-                row.addView(TextView(this@ReaderActivity).apply {
+                texts.addView(TextView(this@ReaderActivity).apply {
                     text = mark.chapter.ifEmpty {
                         val percent = mark.offset * 100 / doc.text.length.coerceAtLeast(1)
                         "位置 $percent%"
@@ -893,13 +892,30 @@ class ReaderActivity : AppCompatActivity() {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 })
-                row.addView(TextView(this@ReaderActivity).apply {
+                texts.addView(TextView(this@ReaderActivity).apply {
                     text = mark.snippet.ifEmpty { "…" }
                     setTextColor(soft)
                     textSize = 11f
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
+                })
+                row.addView(texts)
+                // 右侧：删除
+                row.addView(android.widget.ImageView(this@ReaderActivity).apply {
+                    setImageResource(R.drawable.ic_trash)
+                    setColorFilter(soft)
+                    // 触摸区 30dp，内边距 6dp，图标实际画 18dp
+                    val size = dp(30)
+                    layoutParams = LinearLayout.LayoutParams(size, size).apply { marginStart = dp(6) }
+                    isClickable = true
+                    setPadding(dp(6), dp(6), dp(6), dp(6))
+                    contentDescription = "删除书签"
+                    setOnClickListener {
+                        BookmarkStore.remove(this@ReaderActivity, book.id, mark.id)
+                        Toast.makeText(this@ReaderActivity, "已删除书签", Toast.LENGTH_SHORT).show()
+                        renderBookmarks()
+                    }
                 })
                 content.addView(row)
             }
@@ -1436,7 +1452,6 @@ class ReaderActivity : AppCompatActivity() {
         topArea.visibility = View.GONE
         bottomArea.visibility = View.GONE
         settingsPanel.visibility = View.GONE
-        pageView.setSearchHighlight(query, getColor(R.color.search_highlight))
         buildSearchChrome()
         showSearchChrome(true)
         hideNormalChromeForSearch()
@@ -1592,14 +1607,18 @@ class ReaderActivity : AppCompatActivity() {
     private fun gotoMatch(index: Int, announce: Boolean) {
         val offset = searchMatches.getOrNull(index) ?: return
         pageView.seekToOffset(offset)
-        saveProgress(lastProgress)
+        // 只高亮当前这一处；翻到下一处时旧的会被清掉
+        pageView.setSearchHit(
+            offset, searchQuery?.length ?: 0, getColor(R.color.search_highlight)
+        )
         if (announce) updateSearchChrome()
     }
 
     private fun exitSearchMode() {
         searchQuery = null
         searchMatches = emptyList()
-        pageView.setSearchHighlight(null, 0)
+        pageView.setSearchHit(-1, 0, 0)
+        saveProgress(lastProgress)
         showSearchChrome(false)
         Toast.makeText(this, "已退出搜索", Toast.LENGTH_SHORT).show()
     }

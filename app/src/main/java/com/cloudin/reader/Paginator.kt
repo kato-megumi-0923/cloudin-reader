@@ -67,25 +67,16 @@ internal class Paginator(
 
     private val highlightSpans = mutableListOf<TightHighlightSpan>()
 
-    /** 全文搜索：把 pageText 里的关键词标上底色，不需要重新分页（不影响排版尺寸）。 */
-    fun setSearchHighlight(keyword: String?, color: Int) {
+    /** 全文搜索：只高亮当前这一处命中；传 null 清除。 */
+    fun setSearchHit(offset: Int, length: Int, color: Int) {
         if (pageText.isEmpty()) return
         val spannable = pageText as? Spannable ?: SpannableString(pageText)
         highlightSpans.forEach { spannable.removeSpan(it) }
         highlightSpans.clear()
-        if (!keyword.isNullOrEmpty() && color != 0) {
-            val hay = spannable.toString()
-            var index = hay.indexOf(keyword)
-            var guard = 0
-            while (index >= 0 && guard < 1000) {
-                val span = TightHighlightSpan(color)
-                spannable.setSpan(
-                    span, index, index + keyword.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                highlightSpans.add(span)
-                index = hay.indexOf(keyword, index + keyword.length)
-                guard++
-            }
+        if (color != 0 && length > 0 && offset >= 0 && offset + length <= spannable.length) {
+            val span = TightHighlightSpan(color)
+            spannable.setSpan(span, offset, offset + length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            highlightSpans.add(span)
         }
         pageText = spannable
         clearLayoutCache()

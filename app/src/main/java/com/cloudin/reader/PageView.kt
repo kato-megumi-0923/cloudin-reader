@@ -104,9 +104,9 @@ class PageView @JvmOverloads constructor(
         invalidate()
     }
 
-    /** 搜索态：高亮正文里的关键词；传 null 清除。 */
-    fun setSearchHighlight(keyword: String?, color: Int) {
-        paginator.setSearchHighlight(keyword, color)
+    /** 搜索态：只高亮当前这一处命中（offset/length），color 传 0 清除。 */
+    fun setSearchHit(offset: Int, length: Int, color: Int) {
+        paginator.setSearchHit(offset, length, color)
         invalidate()
     }
 
