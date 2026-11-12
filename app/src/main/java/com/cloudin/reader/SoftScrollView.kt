@@ -19,7 +19,7 @@ import android.widget.ScrollView
  * - 打开边缘过度滚动（Android 12+ 是拉伸回弹），到顶到底有回弹感
  * - 滚动条常驻，并且可以直接按住拖动（按下时变粗、变实），拖起来是快速定位
  */
-class SoftScrollView @JvmOverloads constructor(
+open class SoftScrollView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : ScrollView(context, attrs) {

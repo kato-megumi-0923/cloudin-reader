@@ -30,12 +30,25 @@ object BookmarkStore {
     @Synchronized
     fun load(context: Context, bookId: String): List<Bookmark> = readAll(context)[bookId].orEmpty()
 
-    /** 返回 true 表示新增成功，false 表示附近已有书签。 */
+    /** 返回 true 表示新增成功，false 表示同页已有书签。 */
     @Synchronized
-    fun add(context: Context, bookId: String, offset: Int, chapter: String, snippet: String): Boolean {
+    fun add(
+        context: Context,
+        bookId: String,
+        offset: Int,
+        chapter: String,
+        snippet: String,
+        pageRange: IntRange? = null
+    ): Boolean {
         val all = readAll(context)
         val list = all[bookId]?.toMutableList() ?: mutableListOf()
-        if (list.any { abs(it.offset - offset) < SAME_POSITION_WINDOW }) return false
+        // 同一页只会跳到同一个位置，按整页判重；没给页范围时退回固定窗口
+        val duplicated = if (pageRange != null) {
+            list.any { it.offset in pageRange }
+        } else {
+            list.any { abs(it.offset - offset) < SAME_POSITION_WINDOW }
+        }
+        if (duplicated) return false
         list.add(
             Bookmark(
                 id = UUID.randomUUID().toString(),
@@ -51,10 +64,15 @@ object BookmarkStore {
         return true
     }
 
-    /** 当前阅读位置附近是否已有书签；用于把按钮切成「已加书签」。 */
+    /** 当前阅读页内是否已有书签；用于把按钮切成「已加书签」。优先按页范围判定。 */
     @Synchronized
-    fun findNear(context: Context, bookId: String, offset: Int): Bookmark? =
-        load(context, bookId).firstOrNull { abs(it.offset - offset) < SAME_POSITION_WINDOW }
+    fun findNear(context: Context, bookId: String, offset: Int, pageRange: IntRange? = null): Bookmark? {
+        val list = load(context, bookId)
+        if (pageRange != null) {
+            list.firstOrNull { it.offset in pageRange }?.let { return it }
+        }
+        return list.firstOrNull { abs(it.offset - offset) < SAME_POSITION_WINDOW }
+    }
 
     @Synchronized
     fun remove(context: Context, bookId: String, id: String): Boolean {

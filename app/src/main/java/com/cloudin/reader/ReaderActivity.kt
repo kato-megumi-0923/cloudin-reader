@@ -855,8 +855,16 @@ class ReaderActivity : AppCompatActivity() {
         header.addView(jumpButton)
         card.addView(header)
 
-        // SoftScrollView：更缓的 fling 减速 + 边缘回弹 + 常驻可拖动滚动条
-        val scroll = SoftScrollView(this).apply {
+        // SoftScrollView：更缓的 fling 减速 + 边缘回弹 + 常驻可拖动滚动条。
+        // 长书章节数以千计，列表高度封顶在 0.66 屏，避免目录占满整屏（与设置面板同一思路）。
+        val scroll = object : SoftScrollView(this) {
+            override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+                val safeHeight = (pageView.height * 0.66f).toInt().coerceAtLeast(dp(280))
+                val maxHeight = if (MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED) safeHeight
+                    else minOf(safeHeight, MeasureSpec.getSize(heightSpec))
+                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST))
+            }
+        }.apply {
             indicatorColor = soft
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -985,6 +993,7 @@ class ReaderActivity : AppCompatActivity() {
                 1 -> "去顶部"
                 else -> "去当前"
             }
+            jumpButton.contentDescription = "目录跳转：" + jumpLabel.text
         }
 
         fun smoothTo(target: Int) {
@@ -1184,14 +1193,15 @@ class ReaderActivity : AppCompatActivity() {
         }
         // 当前页已加书签时按钮变成「已加书签」，再点就是删除
         val accent = getColor(R.color.shelf_tab_selected)
-        val existing = BookmarkStore.findNear(this, book.id, pageView.currentOffset())
+        val pageSpan = pageView.currentPageSpan()
+        val existing = BookmarkStore.findNear(this, book.id, pageView.currentOffset(), pageSpan)
         actions.addView(
             action(
                 R.drawable.ic_bookmark,
                 if (existing != null) "已加书签" else "添加书签",
                 if (existing != null) accent else ink
             ) {
-                toggleBookmarkNow(existing) { dialogRef[0]?.dismiss() }
+                toggleBookmarkNow(existing, pageSpan) { dialogRef[0]?.dismiss() }
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
@@ -1208,7 +1218,7 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     /** 一键切换：没书签就加，已有就删；两种情况都会关掉卡片。 */
-    private fun toggleBookmarkNow(existing: Bookmark?, onDone: () -> Unit) {
+    private fun toggleBookmarkNow(existing: Bookmark?, pageSpan: IntRange?, onDone: () -> Unit) {
         val doc = document ?: return
         if (existing != null) {
             BookmarkStore.remove(this, book.id, existing.id)
@@ -1216,7 +1226,7 @@ class ReaderActivity : AppCompatActivity() {
         } else {
             val offset = pageView.currentOffset()
             val added = BookmarkStore.add(
-                this, book.id, offset, doc.chapterAt(offset), snippetAround(doc.text, offset, 0)
+                this, book.id, offset, doc.chapterAt(offset), snippetAround(doc.text, offset, 0), pageSpan
             )
             Toast.makeText(
                 this,
@@ -1252,11 +1262,32 @@ class ReaderActivity : AppCompatActivity() {
         return text.subSequence(start, end).toString().replace('\n', ' ').trim()
     }
 
+    private fun Char.asciiLower(): Char = if (this in 'A'..'Z') this + 32 else this
+
+    /**
+     * 大小写不敏感的查找：查询词只含 ASCII 时按折叠比较（长度不变，偏移一一对应）；
+     * 含非 ASCII（中文等）时退回普通 indexOf——大小写对中文无意义。
+     */
+    private fun indexOfFolded(text: CharSequence, query: String, from: Int): Int {
+        if (query.isEmpty()) return from
+        if (query.any { it.code >= 128 }) return text.indexOf(query, from)
+        val n = text.length
+        val m = query.length
+        var i = from.coerceAtLeast(0)
+        while (i <= n - m) {
+            var j = 0
+            while (j < m && text[i + j].asciiLower() == query[j].asciiLower()) j++
+            if (j == m) return i
+            i++
+        }
+        return -1
+    }
+
     /** 把句子里的关键词标成强调色并加粗。 */
     private fun highlightKeyword(sentence: String, keyword: String, color: Int): CharSequence {
         val spannable = android.text.SpannableString(sentence)
         if (keyword.isEmpty()) return spannable
-        var index = sentence.indexOf(keyword)
+        var index = indexOfFolded(sentence, keyword, 0)
         while (index >= 0) {
             spannable.setSpan(
                 android.text.style.ForegroundColorSpan(color),
@@ -1268,7 +1299,7 @@ class ReaderActivity : AppCompatActivity() {
                 index, index + keyword.length,
                 android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
-            index = sentence.indexOf(keyword, index + keyword.length)
+            index = indexOfFolded(sentence, keyword, index + keyword.length)
         }
         return spannable
     }
@@ -1377,6 +1408,7 @@ class ReaderActivity : AppCompatActivity() {
             setColorFilter(soft)
             layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
             isClickable = true
+            contentDescription = "清空搜索历史"
             setPadding(dp(2), dp(2), dp(2), dp(2))
         }
         historyHeader.addView(trash)
@@ -1458,7 +1490,10 @@ class ReaderActivity : AppCompatActivity() {
             resultsScroll.visibility = View.VISIBLE
             val text = doc.text
             val matches = mutableListOf<Int>()
-            var cursor = text.indexOf(query, 0)
+            // 一次最多收 500 处（够「下一个」慢慢翻）；界面上只渲染前 100 条，
+            // 常见词命中上千时避免一次建上千个视图把主线程卡住
+            val displayCap = 100
+            var cursor = indexOfFolded(text, query, 0)
             var found = 0
             while (cursor >= 0 && found < 500) {
                 val at = cursor
@@ -1471,6 +1506,7 @@ class ReaderActivity : AppCompatActivity() {
                     else if (at < firstChapter) "开篇"
                     else "位置 " + (at * 100 / text.length.coerceAtLeast(1)) + "%"
                 }
+                if (found < displayCap) {
                 resultsBox.addView(TextView(this@ReaderActivity).apply {
                     setText(chapter)
                     setTextColor(ink)
@@ -1495,8 +1531,9 @@ class ReaderActivity : AppCompatActivity() {
                         enterSearchMode(query, matches, matchIndex)
                     }
                 })
+                }
                 found++
-                cursor = text.indexOf(query, at + query.length.coerceAtLeast(1))
+                cursor = indexOfFolded(text, query, at + query.length.coerceAtLeast(1))
             }
             if (found == 0) {
                 resultsBox.addView(TextView(this@ReaderActivity).apply {
@@ -1506,9 +1543,18 @@ class ReaderActivity : AppCompatActivity() {
                     gravity = Gravity.CENTER
                     setPadding(0, dp(20), 0, dp(20))
                 })
+            } else if (found > displayCap) {
+                resultsBox.addView(TextView(this@ReaderActivity).apply {
+                    setText("已显示前 $displayCap 条（共 $found 处），点任意结果跳转后可用「下一个」继续")
+                    setTextColor(soft)
+                    textSize = 11f
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(12), 0, dp(12))
+                })
             }
+            // 有结果才给固定高度；空结果保持自适应，不留一大块空白
             resultsScroll.layoutParams = (resultsScroll.layoutParams as LinearLayout.LayoutParams)
-                .apply { height = dp(300) }
+                .apply { height = if (found > 0) dp(300) else ViewGroup.LayoutParams.WRAP_CONTENT }
         }
 
         runSearchRef = { runSearch(it) }
@@ -1532,7 +1578,10 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun enterSearchMode(query: String, matches: List<Int>, index: Int) {
         if (document == null || matches.isEmpty()) return
-        if (searchQuery == null) searchReturnOffset = pageView.currentOffset()
+        if (searchQuery == null) {
+            searchReturnOffset = pageView.currentOffset()
+            searchBarsWasVisible = barsVisible
+        }
         searchQuery = query
         searchMatches = matches
         searchIndex = index.coerceIn(0, matches.size - 1)
@@ -1549,6 +1598,7 @@ class ReaderActivity : AppCompatActivity() {
         gotoMatch(searchIndex, announce = false)
     }
 
+    private var searchBarsWasVisible = false
     private var searchClose: TextView? = null
     private val searchNavItems = mutableListOf<TextView>()
 
@@ -1606,6 +1656,7 @@ class ReaderActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 setPadding(dp(8), 0, dp(10), 0)
                 isClickable = true
+                contentDescription = "退出搜索"
                 setOnClickListener { exitSearchMode() }
             }
             right.addView(searchCounter)
@@ -1710,6 +1761,14 @@ class ReaderActivity : AppCompatActivity() {
         pageView.setSearchHit(-1, 0, 0)
         saveProgress(lastProgress)
         showSearchChrome(false)
+        // 进搜索前工具栏是开着的，退出时还原，省得再点一下屏幕中央
+        if (searchBarsWasVisible) {
+            searchBarsWasVisible = false
+            barsVisible = true
+            pageView.setChromeVisible(true)
+            animateBar(topArea, true)
+            animateBar(bottomArea, true)
+        }
         Toast.makeText(this, "已退出搜索", Toast.LENGTH_SHORT).show()
     }
 
@@ -1746,7 +1805,8 @@ class ReaderActivity : AppCompatActivity() {
     private fun scheduleAutoReading() {
         val choreographer = Choreographer.getInstance()
         choreographer.removeFrameCallback(autoTick)
-        val running = autoReading && readerResumed && !barsVisible && document != null && hasWindowFocus()
+        val running = autoReading && readerResumed && !barsVisible && searchQuery == null &&
+            document != null && hasWindowFocus()
         val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         if (running) window.addFlags(flag) else window.clearFlags(flag)
         if (!running) return

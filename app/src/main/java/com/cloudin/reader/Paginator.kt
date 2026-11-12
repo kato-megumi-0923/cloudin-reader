@@ -66,32 +66,55 @@ internal class Paginator(
     }
 
     private val highlightSpans = mutableListOf<TightHighlightSpan>()
+    /** 当前高亮覆盖的字符区间，用于精确失效对应的页布局。 */
+    private var hitRange: IntRange? = null
 
-    /** 全文搜索：只高亮当前这一处命中；传 null 清除。 */
+    /** 全文搜索：只高亮当前这一处命中；color 传 0 清除。 */
     fun setSearchHit(offset: Int, length: Int, color: Int) {
         if (pageText.isEmpty()) return
         val spannable = pageText as? Spannable ?: SpannableString(pageText)
+        val previous = hitRange
         highlightSpans.forEach { spannable.removeSpan(it) }
         highlightSpans.clear()
+        var next: IntRange? = null
         if (color != 0 && length > 0 && offset >= 0 && offset + length <= spannable.length) {
             val span = TightHighlightSpan(color)
             spannable.setSpan(span, offset, offset + length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             highlightSpans.add(span)
+            next = offset until offset + length
         }
         pageText = spannable
-        clearLayoutCache()
+        hitRange = next
+        // 只有命中所在的页需要重建，其余页的布局缓存保留，
+        // 避免点「上一个/下一个」时反复重建 StaticLayout
+        invalidatePagesFor(previous)
+        invalidatePagesFor(next)
+    }
+
+    /** 布局在构建时固化了 span，span 变了只需丢弃覆盖该区间的页。 */
+    private fun invalidatePagesFor(range: IntRange?) {
+        if (range == null || pages.isEmpty()) return
+        val first = range.first.coerceIn(0, (pageText.length - 1).coerceAtLeast(0))
+        val last = range.last.coerceAtMost(pageText.length - 1)
+        var index = columnAtOffset(first)
+        while (index < pages.size && pages[index].first <= last) {
+            layoutCache.remove(index)
+            index++
+        }
     }
 
     fun apply(layout: PreparedLayout) {
         columnWidth = layout.size.width
         pageText = layout.text
         pages = layout.pages
+        hitRange = null
         clearLayoutCache()
     }
 
     fun clear() {
         pageText = ""
         pages = emptyList()
+        hitRange = null
         clearLayoutCache()
     }
 

@@ -226,6 +226,17 @@ class PageView @JvmOverloads constructor(
     fun prevPage(y: Float = height / 2f) { if (turnMode == ReaderPrefs.MODE_SCROLL) advanceScroll(-viewportHeight) else turnAnimator.turn(-1, y) }
     fun pageCount(): Int = (pages.size + columns - 1) / columns
     fun pageIndex(): Int = pageIndex / columns
+
+    /** 当前页正文的字符区间（双栏取两栏并集）；书签按整页判重用。 */
+    fun currentPageSpan(): IntRange? {
+        if (pages.isEmpty()) return null
+        val first = pages.getOrNull(pageIndex)?.first ?: return null
+        var last = first
+        for (column in 0 until columns) {
+            pages.getOrNull(pageIndex + column)?.let { last = maxOf(last, it.last) }
+        }
+        return first..last
+    }
     fun isAtEnd(): Boolean = pages.isNotEmpty() && if (turnMode == ReaderPrefs.MODE_SCROLL) {
         scrollController.isAtEnd(pageIndex)
     } else pageIndex + columns >= pages.size
