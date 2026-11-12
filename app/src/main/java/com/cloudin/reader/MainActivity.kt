@@ -301,7 +301,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun isShelfHome(): Boolean = currentTab == Tab.SHELF && currentGroup == null
 
-    private fun hasFloatingHeader(): Boolean = currentTab != Tab.PROFILE && currentGroup == null
+    /** 书架、分组、喜爱、以及分组内部，列表都从页头下方穿过，标题随滚动淡出。 */
+    private fun hasFloatingHeader(): Boolean = currentTab != Tab.PROFILE
 
     private fun updateHeaderLayout() {
         val headerHeight = findViewById<View>(R.id.header).height
