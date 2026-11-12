@@ -855,8 +855,9 @@ class ReaderActivity : AppCompatActivity() {
         header.addView(jumpButton)
         card.addView(header)
 
-        // SoftScrollView：更缓的 fling 减速 + 边缘回弹 + 常驻滚动条
+        // SoftScrollView：更缓的 fling 减速 + 边缘回弹 + 常驻可拖动滚动条
         val scroll = SoftScrollView(this).apply {
+            indicatorColor = soft
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -1386,6 +1387,7 @@ class ReaderActivity : AppCompatActivity() {
 
         val resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val resultsScroll = SoftScrollView(this).apply {
+            indicatorColor = soft
             addView(resultsBox, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
