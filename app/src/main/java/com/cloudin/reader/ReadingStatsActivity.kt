@@ -14,15 +14,12 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.ColorUtils
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
-class ReadingStatsActivity : AppCompatActivity() {
+class ReadingStatsActivity : BaseActivity() {
     private enum class Page(val title: String) {
         OVERVIEW("阅读统计"), DAILY("每日阅读"), MONTHLY("月度阅读"), BOOKS("已读书籍")
     }
@@ -46,7 +43,6 @@ class ReadingStatsActivity : AppCompatActivity() {
             overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.stats_under_enter, R.anim.stats_exit)
         }
         page = savedInstanceState?.getString("stats_page")?.let { Page.valueOf(it) } ?: Page.OVERVIEW
-        window.useAuroraSystemBars()
         root = column()
         val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val toolbar = row().apply { gravity = Gravity.CENTER_VERTICAL }
@@ -66,11 +62,7 @@ class ReadingStatsActivity : AppCompatActivity() {
             addView(backdrop, FrameLayout.LayoutParams(-1, -1))
             addView(root, FrameLayout.LayoutParams(-1, -1))
         })
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
+        insetContent(root)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (page == Page.OVERVIEW) finish() else show(Page.OVERVIEW, animate = true)

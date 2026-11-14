@@ -18,12 +18,21 @@ data class Document(
     val chapters: List<ChapterMark>,
     val images: List<InlineImage> = emptyList()
 ) {
+    /** 章节 offset 递增，二分查找；翻页和搜索都会高频调用。 */
     fun chapterIndexAt(offset: Int): Int {
-        var index = -1
-        for (i in chapters.indices) {
-            if (chapters[i].offset <= offset) index = i else break
+        var low = 0
+        var high = chapters.size - 1
+        var found = -1
+        while (low <= high) {
+            val mid = (low + high) ushr 1
+            if (chapters[mid].offset <= offset) {
+                found = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
         }
-        return index
+        return found
     }
 
     fun chapterAt(offset: Int): String =

@@ -27,12 +27,15 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import androidx.appcompat.app.AppCompatActivity
 
-class ReaderActivity : AppCompatActivity() {
+/** 搜索结果上限：界面渲染前 100 条，扫描最多收 500 处。 */
+private const val DISPLAY_CAP = 100
+private const val MAX_MATCHES = 500
+
+class ReaderActivity : BaseActivity() {
+
+    override val systemBarDark: Boolean get() = ReaderPrefs.palette(theme).dark
 
     private enum class Panel { SETTINGS, FONT, TURN, PROGRESS, AUTO, DISPLAY, MORE }
 
@@ -45,6 +48,15 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var menuButton: GlassActionButton
 
     // 搜索态
+    /** 搜索代次号：连点搜索时旧任务的结果直接丢弃。 */
+    @Volatile
+    private var searchGeneration = 0
+
+    /** 全文搜索专用线程池，独立于分页的 layoutWorker，两类任务互不排队。 */
+    private val searchWorker = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "reader-search")
+    }
+
     private var searchQuery: String? = null
     private var searchMatches: List<Int> = emptyList()
     private var searchIndex = 0
@@ -79,9 +91,6 @@ class ReaderActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         restoredOffset = savedInstanceState?.getInt("readingOffset", -1)?.takeIf { it >= 0 }
         autoReading = savedInstanceState?.getBoolean("autoReading") ?: false
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
         setContentView(R.layout.activity_reader)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -92,15 +101,11 @@ class ReaderActivity : AppCompatActivity() {
         val rootView = findViewById<View>(R.id.root)
         val top = findViewById<View>(R.id.topArea)
         val bottom = findViewById<View>(R.id.bottomArea)
-        ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-            )
-            top.setPadding(top.paddingLeft, bars.top, top.paddingRight, top.paddingBottom)
-            bottom.setPadding(bottom.paddingLeft, bottom.paddingTop, bottom.paddingRight, bars.bottom)
-            findViewById<PageView>(R.id.pageView).setBottomInset(bars.bottom)
-            findViewById<PageView>(R.id.pageView).setTopInset(bars.top)
-            insets
+        onSystemBarInsets(rootView) { _, topInset, _, bottomInset ->
+            top.setPadding(top.paddingLeft, topInset, top.paddingRight, top.paddingBottom)
+            bottom.setPadding(bottom.paddingLeft, bottom.paddingTop, bottom.paddingRight, bottomInset)
+            findViewById<PageView>(R.id.pageView).setBottomInset(bottomInset)
+            findViewById<PageView>(R.id.pageView).setTopInset(topInset)
         }
 
         val bookId = intent.getStringExtra("bookId")
@@ -249,13 +254,8 @@ class ReaderActivity : AppCompatActivity() {
         val ink = ReaderPrefs.ink(theme)
         val soft = ReaderPrefs.softInk(theme)
         topBar.setBackgroundColor(Color.TRANSPARENT)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
         val dark = ReaderPrefs.palette(theme).dark
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
-        }
+        window.syncSystemBarIconTone(dark)
         txtTitle.setTextColor(ink)
         txtChapter.setTextColor(soft)
         txtChapter.visibility = if (ReaderPrefs.showChapter(this)) View.VISIBLE else View.GONE
@@ -1228,11 +1228,12 @@ class ReaderActivity : AppCompatActivity() {
             val added = BookmarkStore.add(
                 this, book.id, offset, doc.chapterAt(offset), snippetAround(doc.text, offset, 0), pageSpan
             )
-            Toast.makeText(
-                this,
-                if (added) "已添加书签，可在目录的「书签」里查看" else "这个位置已经有书签了",
-                Toast.LENGTH_SHORT
-            ).show()
+            val message = when (added) {
+                BookmarkAddResult.ADDED -> "已添加书签，可在目录的「书签」里查看"
+                BookmarkAddResult.DUPLICATE -> "这个位置已经有书签了"
+                BookmarkAddResult.FAILED -> "书签保存失败，请稍后再试"
+            }
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         }
         onDone()
     }
@@ -1281,6 +1282,41 @@ class ReaderActivity : AppCompatActivity() {
             i++
         }
         return -1
+    }
+
+    private class SearchHit(val offset: Int, val chapter: String, val sentence: String)
+
+    private class SearchOutcome(val matches: List<Int>, val hits: List<SearchHit>, val truncated: Boolean = false)
+
+    /**
+     * 后台扫全文。执行器独立于分页的单线程队列，排版进行中发起搜索不会排队等待。
+     * 结果按代次号丢弃：连点搜索时只认最后一次。
+     */
+    private fun collectMatches(doc: Document, query: String, generation: Int): SearchOutcome {
+        val text = doc.text
+        val matches = mutableListOf<Int>()
+        val hits = mutableListOf<SearchHit>()
+        var cursor = indexOfFolded(text, query, 0)
+        var found = 0
+        while (cursor >= 0 && found < MAX_MATCHES) {
+            if (generation != searchGeneration) return SearchOutcome(emptyList(), emptyList())
+            matches.add(cursor)
+            if (found < DISPLAY_CAP) {
+                hits.add(SearchHit(cursor, chapterLabel(doc, cursor), sentenceAround(text, cursor, query.length)))
+            }
+            found++
+            cursor = indexOfFolded(text, query, cursor + query.length.coerceAtLeast(1))
+        }
+        return SearchOutcome(matches, hits, truncated = cursor >= 0)
+    }
+
+    private fun chapterLabel(doc: Document, offset: Int): String = doc.chapterAt(offset).ifEmpty {
+        val firstChapter = doc.chapters.firstOrNull()?.offset ?: -1
+        when {
+            firstChapter < 0 -> "本书"
+            offset < firstChapter -> "开篇"
+            else -> "位置 " + (offset * 100 / doc.text.length.coerceAtLeast(1)) + "%"
+        }
     }
 
     /** 把句子里的关键词标成强调色并加粗。 */
@@ -1488,73 +1524,72 @@ class ReaderActivity : AppCompatActivity() {
             rememberSearch(query)
             historyBox.visibility = View.GONE
             resultsScroll.visibility = View.VISIBLE
-            val text = doc.text
-            val matches = mutableListOf<Int>()
-            // 一次最多收 500 处（够「下一个」慢慢翻）；界面上只渲染前 100 条，
-            // 常见词命中上千时避免一次建上千个视图把主线程卡住
-            val displayCap = 100
-            var cursor = indexOfFolded(text, query, 0)
-            var found = 0
-            while (cursor >= 0 && found < 500) {
-                val at = cursor
-                val matchIndex = found
-                matches.add(at)
-                // 章节名：正文之前的命中显示「开篇」，其余按位置百分比兜底
-                val chapter = doc.chapterAt(at).ifEmpty {
-                    val firstChapter = doc.chapters.firstOrNull()?.offset ?: -1
-                    if (firstChapter < 0) "本书"
-                    else if (at < firstChapter) "开篇"
-                    else "位置 " + (at * 100 / text.length.coerceAtLeast(1)) + "%"
-                }
-                if (found < displayCap) {
-                resultsBox.addView(TextView(this@ReaderActivity).apply {
-                    setText(chapter)
-                    setTextColor(ink)
-                    textSize = 13f
-                    typeface = Typeface.DEFAULT_BOLD
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(dp(2), dp(14), dp(2), dp(6))
-                })
-                // 命中所在的那一句，关键词标红
-                val sentence = sentenceAround(text, at, query.length)
-                resultsBox.addView(TextView(this@ReaderActivity).apply {
-                    setText(highlightKeyword(sentence, query, accent))
-                    setTextColor(ink)
-                    textSize = 12f
-                    setLineSpacing(dp(4).toFloat(), 1f)
-                    background = getDrawable(R.drawable.bg_glass_chip)
-                    setPadding(dp(12), dp(10), dp(12), dp(10))
-                    isClickable = true
-                    setOnClickListener {
-                        dialogRef[0]?.dismiss()
-                        enterSearchMode(query, matches, matchIndex)
-                    }
-                })
-                }
-                found++
-                cursor = indexOfFolded(text, query, at + query.length.coerceAtLeast(1))
-            }
-            if (found == 0) {
-                resultsBox.addView(TextView(this@ReaderActivity).apply {
-                    setText("没有找到「$query」")
-                    setTextColor(soft)
-                    textSize = 12f
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(20), 0, dp(20))
-                })
-            } else if (found > displayCap) {
-                resultsBox.addView(TextView(this@ReaderActivity).apply {
-                    setText("已显示前 $displayCap 条（共 $found 处），点任意结果跳转后可用「下一个」继续")
-                    setTextColor(soft)
-                    textSize = 11f
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(12), 0, dp(12))
-                })
-            }
-            // 有结果才给固定高度；空结果保持自适应，不留一大块空白
             resultsScroll.layoutParams = (resultsScroll.layoutParams as LinearLayout.LayoutParams)
-                .apply { height = if (found > 0) dp(300) else ViewGroup.LayoutParams.WRAP_CONTENT }
+                .apply { height = dp(300) }
+            resultsBox.addView(TextView(this@ReaderActivity).apply {
+                setText("正在搜索…")
+                setTextColor(soft)
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setPadding(0, dp(18), 0, dp(18))
+            })
+            // 后台扫全文：执行器独立于分页队列，大书排版时搜索不用排队
+            val target = doc
+            val generation = ++searchGeneration
+            searchWorker.execute {
+                val outcome = collectMatches(target, query, generation)
+                runOnUiThread {
+                    if (generation != searchGeneration || isFinishing || isDestroyed) return@runOnUiThread
+                    resultsBox.removeAllViews()
+                    val found = outcome.matches.size
+                    if (found == 0) {
+                        resultsBox.addView(TextView(this@ReaderActivity).apply {
+                            setText("没有找到「$query」")
+                            setTextColor(soft)
+                            textSize = 12f
+                            gravity = Gravity.CENTER
+                            setPadding(0, dp(20), 0, dp(20))
+                        })
+                    } else {
+                        outcome.hits.forEachIndexed { matchIndex, hit ->
+                            resultsBox.addView(TextView(this@ReaderActivity).apply {
+                                setText(hit.chapter)
+                                setTextColor(ink)
+                                textSize = 13f
+                                typeface = Typeface.DEFAULT_BOLD
+                                maxLines = 1
+                                ellipsize = android.text.TextUtils.TruncateAt.END
+                                setPadding(dp(2), dp(14), dp(2), dp(6))
+                            })
+                            resultsBox.addView(TextView(this@ReaderActivity).apply {
+                                setText(highlightKeyword(hit.sentence, query, accent))
+                                setTextColor(ink)
+                                textSize = 12f
+                                setLineSpacing(dp(4).toFloat(), 1f)
+                                background = getDrawable(R.drawable.bg_glass_chip)
+                                setPadding(dp(12), dp(10), dp(12), dp(10))
+                                isClickable = true
+                                setOnClickListener {
+                                    dialogRef[0]?.dismiss()
+                                    enterSearchMode(query, outcome.matches, matchIndex)
+                                }
+                            })
+                        }
+                        if (found > DISPLAY_CAP) {
+                            resultsBox.addView(TextView(this@ReaderActivity).apply {
+                                val count = if (outcome.truncated) "仅统计前 $found 处" else "共 $found 处"
+                                text = "已显示前 $DISPLAY_CAP 条（$count），点任意结果跳转后可用「下一个」继续"
+                                setTextColor(soft)
+                                textSize = 11f
+                                gravity = Gravity.CENTER
+                                setPadding(0, dp(12), 0, dp(12))
+                            })
+                        }
+                    }
+                    resultsScroll.layoutParams = (resultsScroll.layoutParams as LinearLayout.LayoutParams)
+                        .apply { height = if (found > 0) dp(300) else ViewGroup.LayoutParams.WRAP_CONTENT }
+                }
+            }
         }
 
         runSearchRef = { runSearch(it) }
@@ -1779,6 +1814,8 @@ class ReaderActivity : AppCompatActivity() {
     private fun changeTheme(value: Int) {
         ReaderPrefs.setTheme(this, value)
         applyTheme(value)
+        // 夜间模式与书架皮肤联动：夜间用炫酷黑，切回日间还原进夜间前的皮肤
+        SkinSync.onReaderTheme(this, ReaderPrefs.palette(value).dark)
     }
 
     private fun applyTheme(value: Int) {
@@ -1940,6 +1977,11 @@ class ReaderActivity : AppCompatActivity() {
         }
         if (document != null) readingStartedAt = SystemClock.elapsedRealtime()
         scheduleAutoReading()
+    }
+
+    override fun onDestroy() {
+        searchWorker.shutdownNow()
+        super.onDestroy()
     }
 
     override fun onPause() {

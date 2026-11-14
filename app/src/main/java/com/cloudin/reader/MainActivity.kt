@@ -29,8 +29,6 @@ import androidx.appcompat.app.AppCompatActivity
 import android.app.Dialog
 import android.graphics.drawable.ColorDrawable
 import android.view.Gravity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -39,7 +37,9 @@ import java.io.File
 
 private const val PROFILE_CARD_WIDTH_DP = 345
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : BaseActivity() {
+
+    override val systemBarDark: Boolean get() = SkinStore.load(this).dark
 
     private enum class Tab { SHELF, GROUPS, FAVORITE, PROFILE }
 
@@ -73,6 +73,9 @@ class MainActivity : AppCompatActivity() {
     private var bottomInset = 0
     private var wifiTransferDialog: Dialog? = null
     private var wifiDestination: Uri? = null
+    private var skinScrim: View? = null
+    private var restoreAttempted = false
+    private var libraryFailed = false
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -97,26 +100,26 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         openedBookId = savedInstanceState?.getString("opened_book_id")
-        window.useAuroraSystemBars()
         setContentView(R.layout.activity_main)
 
         val root = findViewById<View>(R.id.root)
+        // 照片皮肤直接压在文字下面会糊成一片，铺一层很淡的蒙版保证可读
+        val shelfBackdrop = findViewById<FrameLayout>(R.id.shelfBackdrop)
+        skinScrim = View(this).also { scrim ->
+            shelfBackdrop.addView(scrim, 1, FrameLayout.LayoutParams(-1, -1))
+        }
         val header = findViewById<View>(R.id.header)
         val bottomBarViewLocal = findViewById<View>(R.id.bottomBar)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-            )
-            bottomInset = bars.bottom
-            header.setPadding(header.paddingLeft, bars.top, header.paddingRight, header.paddingBottom)
+        onSystemBarInsets(root) { _, top, _, bottom ->
+            bottomInset = bottom
+            header.setPadding(header.paddingLeft, top, header.paddingRight, header.paddingBottom)
             val barLp = bottomBarViewLocal.layoutParams as android.view.ViewGroup.MarginLayoutParams
-            barLp.bottomMargin = bars.bottom
+            barLp.bottomMargin = bottom
             bottomBarViewLocal.layoutParams = barLp
             (findViewById<View>(R.id.actionSheet)?.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.let { sheetLp ->
-                sheetLp.bottomMargin = dp(16) + bars.bottom
+                sheetLp.bottomMargin = dp(16) + bottom
                 findViewById<View>(R.id.actionSheet)?.layoutParams = sheetLp
             }
-            insets
         }
 
         title = findViewById(R.id.title)
@@ -356,10 +359,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun gridSpanCount(): Int {
-        val widthDp = resources.configuration.screenWidthDp
-        return (widthDp / 114).coerceIn(4, 12)
-    }
+    private fun gridSpanCount(): Int = shelfColumns(this)
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -413,8 +413,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun reload() {
         groups.clear()
-        groups.addAll(GroupStore.load(this))
-        val all = BookStore.load(this)
+        val groupLoad = GroupStore.read(this)
+        if (groupLoad is GroupLoad.Ok) groups.addAll(groupLoad.groups)
+
+        val libraryLoad = BookStore.read(this)
+        if (libraryLoad is LibraryLoad.Failed && !restoreAttempted) {
+            restoreAttempted = true
+            val report = BookStore.restore(this)
+            if (report.ok) {
+                val detail = if (report.dropped.isEmpty()) "" else "，剔除 ${report.dropped.size} 本正文已缺失的书"
+                Toast.makeText(this, "书库读取失败，已从备份恢复 ${report.restored} 本$detail", Toast.LENGTH_LONG).show()
+                reload()
+                return
+            }
+        }
+        libraryFailed = libraryLoad is LibraryLoad.Failed
+        var all: MutableList<Book> = (libraryLoad as? LibraryLoad.Ok)?.books ?: mutableListOf()
+        // 自愈以分组读取成功为前提：读失败时保留归属、不写盘，等下次读到 Ok 再清。
+        if (libraryLoad is LibraryLoad.Ok && groupLoad is GroupLoad.Ok) {
+            val validIds = groups.map { it.id }.toSet()
+            if (all.any { it.groupId != null && it.groupId !in validIds }) {
+                BookStore.clearDanglingGroups(this, validIds)
+                (BookStore.read(this) as? LibraryLoad.Ok)?.let { all = it.books }
+            }
+        }
         val profileHome = currentTab == Tab.PROFILE
         val shelfHome = isShelfHome()
         val formatLabel = getString(shelfFormat.label)
@@ -454,6 +476,10 @@ class MainActivity : AppCompatActivity() {
         adapter.submit(folderList, books)
 
         when {
+            libraryFailed -> {
+                empty.text = "书库读取失败，原文件已保留\n可到「设置」里用备份恢复"
+                empty.visibility = View.VISIBLE
+            }
             profileHome -> empty.visibility = View.GONE
             currentTab == Tab.FAVORITE && books.isEmpty() -> {
                 empty.text = "还没有喜爱的书\n点卡片右上角的小心心收藏"
@@ -496,6 +522,28 @@ class MainActivity : AppCompatActivity() {
         }
         updateHeaderLayout()
         updateTabBar()
+        applySkin()
+    }
+
+    /** 皮肤铺到整页背景层，深色皮肤额外把文字与状态栏图标切成浅色。 */
+    private fun applySkin() {
+        val skin = SkinStore.load(this)
+        val root = findViewById<View>(R.id.root)
+        val backdrop = findViewById<View>(R.id.bgLayer)
+        SkinStore.applyTo(this, backdrop, skin)
+        skinScrim?.setBackgroundColor(
+            when {
+                skin.kind != SkinKind.PHOTO -> Color.TRANSPARENT
+                skin.dark -> 0x33000000
+                else -> 0x22FFFFFF
+            }
+        )
+        SkinTheme.applyTo(root, skin.dark)
+        SkinTheme.applyGlassEdge(root, skin.pale)
+        findViewById<ShelfTabBar>(R.id.bottomBar).setPhotoSkin(skin.kind == SkinKind.PHOTO)
+        adapter.setSkinDark(skin.dark)
+        adapter.setSkinPale(skin.pale)
+        refreshBackdrop()
     }
 
     private fun setupProfile() {
@@ -600,9 +648,11 @@ class MainActivity : AppCompatActivity() {
             current = page
             rows.removeAllViews()
             if (page == null) {
-                rows.minimumHeight = dp(56) * (settings.size + 2)
+                rows.minimumHeight = dp(56) * (settings.size + 4)
                 rows.setPadding(0, 0, 0, 0)
                 cardTitle.text = getString(R.string.profile_settings)
+                addCardRow(content, "皮肤", color) { openProfilePage(SkinActivity::class.java) }
+                addCardRow(content, "默认封面", color) { openProfilePage(DefaultCoverActivity::class.java) }
                 addCardRow(content, getString(R.string.reader_background), color) { openProfilePage(ReadingBackgroundActivity::class.java) }
                 addCardRow(content, getString(R.string.reader_turn_mode), color) { navigate(ProfileSettingsPage.TURN) }
                 settings.forEach { (destination, item) ->
@@ -690,11 +740,12 @@ class MainActivity : AppCompatActivity() {
             cornerRadius = dp(26).toFloat()
             setColor(0x2EFFFFFF)
         }
+        val pale = SkinStore.load(this).pale
         val glass = AgslGlassView(this).apply {
             cornerRadius = dp(26).toFloat()
             blurRadius = dp(11).toFloat()
-            tintColor = 0xFFFFFFFF.toInt()
-            tintAlpha = 0.10f
+            tintColor = if (pale) 0xFFDDE4ED.toInt() else 0xFFFFFFFF.toInt()
+            tintAlpha = if (pale) 0.46f else 0.10f
             dispersion = 0.16f
             usePopupOptics()
         }
@@ -846,10 +897,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         addCardRow(content, "确认删除", Color.parseColor("#C0442E")) {
-            if (check.isChecked) {
-                BookStore.load(this).filter { it.groupId == group.id }.forEach { BookStore.remove(this, it) }
+            if (!GroupStore.remove(this, group.id, deleteBooks = check.isChecked)) {
+                Toast.makeText(this, "删除分组失败，请重试", Toast.LENGTH_SHORT).show()
+                return@addCardRow
             }
-            GroupStore.remove(this, group.id)
             if (currentGroup?.id == group.id) currentGroup = null
             dialog.setOnDismissListener {
                 dialog.setOnDismissListener(null)
@@ -941,7 +992,7 @@ class MainActivity : AppCompatActivity() {
         create.setOnClickListener {
             val name = input.text.toString().trim()
             if (name.isEmpty()) return@setOnClickListener
-            BookStore.setGroup(this, ids, GroupStore.add(this, name).id)
+            GroupStore.add(this, name)?.let { BookStore.setGroup(this, ids, it.id) }
             reload()
             close()
         }
@@ -973,7 +1024,16 @@ class MainActivity : AppCompatActivity() {
         actionSheet.visibility = View.GONE
         selectionActions.visibility = View.GONE
         actions.visibility = View.VISIBLE
-        reload()
+        // 这里不 reload()：退出选择没有改动任何数据，重新读盘 + 整表刷新只会让封面闪一下
+        btnBack.visibility = if (currentGroup != null) View.VISIBLE else View.GONE
+        title.text = currentGroup?.name ?: when (currentTab) {
+            Tab.PROFILE -> getString(R.string.profile_tab)
+            Tab.FAVORITE -> "喜爱"
+            Tab.GROUPS -> "分组"
+            else -> getString(R.string.shelf)
+        }
+        if (books.isEmpty() && currentTab != Tab.PROFILE) empty.visibility = View.VISIBLE
+        updateHeaderTitle()
         if (bottomBarView.visibility == View.VISIBLE) showBottomBar(bottomBarView)
     }
 
@@ -1368,13 +1428,13 @@ class MainActivity : AppCompatActivity() {
                     else -> failed++
                 }
             }
-            val grouped = runCatching { groupByDirectory(directoryName, added, dirOf) }.getOrDefault(emptyList())
+            val (grouped, groupingFailures) = groupByDirectory(directoryName, added, dirOf)
             val summary = importSummary(added.size, duplicates, failed) + when {
                 grouped.isEmpty() -> ""
                 grouped.size == 1 -> "，已归入「${grouped.first()}」"
                 else -> "，已创建 ${grouped.size} 个分组：" + grouped.take(3).joinToString("、") +
                     if (grouped.size > 3) " 等" else ""
-            }
+            } + if (groupingFailures > 0) "，有 ${groupingFailures} 本未能归入分组" else ""
             runOnUiThread {
                 importing = false
                 reload()
@@ -1392,21 +1452,23 @@ class MainActivity : AppCompatActivity() {
         rootName: String,
         added: List<Book>,
         dirOf: Map<String, String>
-    ): List<String> {
-        if (added.isEmpty()) return emptyList()
+    ): Pair<List<String>, Int> {
+        if (added.isEmpty()) return emptyList<String>() to 0
         val byDir = added.groupBy { dirOf[it.id].orEmpty() }
         val leafCount = byDir.keys.filter { it.isNotEmpty() }
             .groupingBy { it.substringAfterLast('/') }.eachCount()
         val created = mutableListOf<String>()
+        var failures = 0
         byDir.forEach { (dir, books) ->
             val leaf = if (dir.isEmpty()) rootName else dir.substringAfterLast('/')
             // 不同上级目录下同名子目录时，用完整相对路径区分
             val name = if (dir.isEmpty() || (leafCount[leaf] ?: 0) <= 1) leaf else dir.replace('/', '·')
-            runCatching {
+            val group = runCatching {
                 GroupStore.groupImportedBooks(this@MainActivity, name, books.map { it.id })
-            }.getOrNull()?.let { created.add(it.name) }
+            }.getOrNull()
+            if (group == null) failures += books.size else created.add(group.name)
         }
-        return created
+        return created to failures
     }
 
     private fun cleanupDuplicates() {

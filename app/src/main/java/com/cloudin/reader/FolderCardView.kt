@@ -35,8 +35,19 @@ class FolderCardView @JvmOverloads constructor(
         background = GradientDrawable().apply {
             setColor(0xE8FFFFFF.toInt())
             cornerRadius = 14f * density
+            // 常驻一条淡描边：书不满 4 本时卡片里是大片空白，纯靠白底会彻底看不见边界
+            setStroke((1f * density).toInt(), 0x1F1A2430)
         }
         clipToOutline = true
+    }
+
+    /** 近白皮肤下把底色压成浅灰，避免整张卡片融进白色页面。 */
+    internal fun applySkin(pale: Boolean) {
+        (background as? GradientDrawable)?.apply {
+            setColor(if (pale) 0xFFF3F5F8.toInt() else 0xE8FFFFFF.toInt())
+            setStroke((1f * density).toInt(), if (pale) 0x331A2430 else 0x1F1A2430)
+        }
+        invalidate()
     }
 
     fun bind(books: List<Book>, isAdd: Boolean) {

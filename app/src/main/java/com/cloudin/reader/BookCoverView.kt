@@ -30,6 +30,7 @@ class BookCoverView @JvmOverloads constructor(
     private var bitmap: Bitmap? = null
     private var coverPath: String? = null
     private var defaultCoverIndex: Int? = null
+    private var artworkFile: String? = null
     private var artworkResourceId = 0
     private var failedFileKey: CoverThumbnailLoader.Key? = null
     private var loadedKey: CoverThumbnailLoader.Key? = null
@@ -52,6 +53,23 @@ class BookCoverView @JvmOverloads constructor(
         strokeWidth = 1f * density
         color = Color.parseColor("#99FFFFFF")
     }
+
+    /**
+     * 常驻 1dp 淡描边，按皮肤换边色：
+     * 白底用淡深边，深底用淡白边，极光/照片保留原来的白边。
+     * 否则浅封面（或没有封面的白卡）在白底皮肤上会整块融进背景。
+     */
+    internal fun applySkin(dark: Boolean, pale: Boolean) {
+        val color = when {
+            pale -> 0x2E1A2430
+            dark -> 0x3DFFFFFF
+            else -> 0x99FFFFFF.toInt()
+        }
+        if (borderPaint.color != color) {
+            borderPaint.color = color
+            invalidate()
+        }
+    }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
@@ -67,7 +85,12 @@ class BookCoverView @JvmOverloads constructor(
 
 
     fun bind(book: Book) {
-        val changed = book.id != bookId || book.coverPath != coverPath || book.defaultCoverIndex != defaultCoverIndex
+        // 用户新增的默认封面存在私有目录里，按编号查文件；内置封面仍走 drawable。
+        val nextArtworkFile = if (book.coverPath == null) {
+            DefaultCoverStore.resolvePath(context, book.defaultCoverIndex)
+        } else null
+        val changed = book.id != bookId || book.coverPath != coverPath ||
+            book.defaultCoverIndex != defaultCoverIndex || nextArtworkFile != artworkFile
         if (title != book.title) placeholderGradient = null
         title = book.title
         bookId = book.id
@@ -78,6 +101,7 @@ class BookCoverView @JvmOverloads constructor(
             failedFileKey = null
             coverPath = book.coverPath
             defaultCoverIndex = book.defaultCoverIndex
+            artworkFile = nextArtworkFile
             artworkResourceId = artworkResource()
             updateAppearance(false)
         }
@@ -111,7 +135,7 @@ class BookCoverView @JvmOverloads constructor(
 
     private fun requestThumbnail() {
         if (!isAttachedToWindow || width <= 0 || height <= 0) return
-        val fileKey = coverPath?.let { CoverThumbnailLoader.key(it, width, height) }
+        val fileKey = (coverPath ?: artworkFile)?.let { CoverThumbnailLoader.key(it, width, height) }
         val key = when {
             fileKey != null && fileKey != failedFileKey -> fileKey
             artworkResourceId != 0 -> CoverThumbnailLoader.resourceKey(context, artworkResourceId, width, height)
@@ -183,7 +207,7 @@ class BookCoverView @JvmOverloads constructor(
         }
         if (!folderPreview) canvas.drawRoundRect(rect, radius, radius, borderPaint)
 
-        val isArtwork = (loadedKey?.resourceId ?: 0) != 0
+        val isArtwork = (loadedKey?.resourceId ?: 0) != 0 || artworkFile != null
         if (bmp != null) {
             canvas.save()
             if (!folderPreview) canvas.clipPath(imageClip)

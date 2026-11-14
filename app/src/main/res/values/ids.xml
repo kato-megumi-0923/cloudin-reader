@@ -6,4 +6,13 @@
     <item name="readerSettingTurn" type="id" />
     <item name="readerSettingMore" type="id" />
     <item name="readerSettingProgress" type="id" />
+    <item name="skin_text_color_tag" type="id" />
+    <item name="skin_icon_tint_tag" type="id" />
+    <item name="skin_glass_tint_tag" type="id" />
+    <item name="cover_selection_tag" type="id" />
+    <item name="skinHeader" type="id" />
+    <item name="coverHeader" type="id" />
+    <item name="coverThumb" type="id" />
+    <item name="coverCheck" type="id" />
+    <item name="coverAdd" type="id" />
 </resources>

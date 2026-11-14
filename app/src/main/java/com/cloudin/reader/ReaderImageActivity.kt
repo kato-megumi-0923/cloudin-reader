@@ -22,14 +22,12 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import java.io.File
 import java.io.IOException
 import java.util.Locale
 
-class ReaderImageActivity : AppCompatActivity() {
+class ReaderImageActivity : BaseActivity() {
     private lateinit var source: File
     private lateinit var save: GlassActionButton
     private val storagePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -50,7 +48,6 @@ class ReaderImageActivity : AppCompatActivity() {
             return
         }
         source = file
-        window.useAuroraSystemBars()
         val root = FrameLayout(this)
         val picture = ZoomImageView(this).apply {
             setBackgroundResource(R.drawable.bg_aurora)
@@ -77,10 +74,8 @@ class ReaderImageActivity : AppCompatActivity() {
             marginEnd = readerDp(16)
         })
         setContentView(root)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            buttons.setPadding(bars.left, bars.top + readerDp(8), bars.right, 0)
-            insets
+        onSystemBarInsets(root) { left, topInset, right, _ ->
+            buttons.setPadding(left, topInset + readerDp(8), right, 0)
         }
         ViewCompat.requestApplyInsets(root)
         Thread {

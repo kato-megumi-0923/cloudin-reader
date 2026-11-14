@@ -27,6 +27,23 @@ class BookshelfAdapter(
     var selecting = false
         private set
 
+    /** 深色皮肤下书名/进度要换成浅色；回收复用时按当前皮肤重新上色。 */
+    private var skinDark = false
+    private var skinPale = false
+
+    fun setSkinDark(dark: Boolean) {
+        if (skinDark == dark) return
+        skinDark = dark
+        notifyDataSetChanged()
+    }
+
+    /** 近白皮肤：分组卡片要描边 + 压灰底，否则白底上只剩一片空白。 */
+    fun setSkinPale(pale: Boolean) {
+        if (skinPale == pale) return
+        skinPale = pale
+        notifyDataSetChanged()
+    }
+
     var onSelectionChanged: ((Int) -> Unit)? = null
 
     fun submit(folderList: List<Folder>, list: List<Book>) {
@@ -50,14 +67,14 @@ class BookshelfAdapter(
         selecting = true
         selected.clear()
         selected.add(book.id)
-        notifyDataSetChanged()
+        notifySelectionOnly()
         onSelectionChanged?.invoke(selected.size)
     }
 
     fun startSelecting() {
         selecting = true
         selected.clear()
-        notifyDataSetChanged()
+        notifySelectionOnly()
         onSelectionChanged?.invoke(0)
     }
 
@@ -65,13 +82,13 @@ class BookshelfAdapter(
         selecting = true
         selected.clear()
         selected.addAll(items.map { it.id })
-        notifyDataSetChanged()
+        notifySelectionOnly()
         onSelectionChanged?.invoke(selected.size)
     }
 
     fun clearSelection() {
         selected.clear()
-        notifyDataSetChanged()
+        notifySelectionOnly()
         onSelectionChanged?.invoke(0)
     }
 
@@ -80,8 +97,16 @@ class BookshelfAdapter(
     fun exitSelection() {
         selecting = false
         selected.clear()
-        notifyDataSetChanged()
+        notifySelectionOnly()
         onSelectionChanged?.invoke(0)
+    }
+
+    /**
+     * 只更勾选状态，不动封面本身。
+     * 这里用 payload 通知：整表刷新会让每个 BookCoverView 重新测量/取图，肉眼就是闪一下。
+     */
+    private fun notifySelectionOnly() {
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, SelectionChange)
     }
 
     private fun toggle(book: Book) {
@@ -150,6 +175,8 @@ class BookshelfAdapter(
             val group = folder.group
             folderCard?.bind(folder.preview, isAdd = group == null)
             folderName?.text = group?.name ?: "新建分组"
+            folderName?.setTextColor(SkinTheme.title(skinDark))
+            folderCard?.applySkin(skinPale)
             itemView.setOnClickListener { onFolderClick(group) }
             itemView.setOnLongClickListener {
                 group?.let { onFolderLongClick(it) }
@@ -160,7 +187,10 @@ class BookshelfAdapter(
         fun bindBook(book: Book) {
             cover?.onCoverAppearanceChanged = null
             cover?.bind(book)
+            cover?.applySkin(skinDark, skinPale)
             title?.text = book.title
+            title?.setTextColor(SkinTheme.title(skinDark))
+            progress?.setTextColor(SkinTheme.meta(skinDark))
             val percent = (book.progress * 100).toInt()
             progress?.text = when {
                 book.progress <= 0.001f || percent == 0 -> "未读"

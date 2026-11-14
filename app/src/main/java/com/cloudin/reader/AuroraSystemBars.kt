@@ -14,3 +14,11 @@ internal fun Window.useAuroraSystemBars() {
         isAppearanceLightNavigationBars = true
     }
 }
+
+/** 深色皮肤下把状态栏图标切成浅色，避免黑色图标压在深色背景上。 */
+internal fun Window.syncSystemBarIconTone(darkBackground: Boolean) {
+    WindowInsetsControllerCompat(this, decorView).apply {
+        isAppearanceLightStatusBars = !darkBackground
+        isAppearanceLightNavigationBars = !darkBackground
+    }
+}

@@ -201,10 +201,15 @@ internal class WifiBookTransfer private constructor(
     }
 
     private fun importBook(temp: File, name: String): String = try {
+        var grouped = false
         val result = BookStore.import(context, Uri.fromFile(temp), name, MAX_EXPANDED_BYTES) { book ->
-            GroupStore.groupImportedBooks(context, directoryName, listOf(book.id))
+            grouped = GroupStore.groupImportedBooks(context, directoryName, listOf(book.id)) != null
         }
-        if (result == ImportResult.Failed) "import_failed" else "added"
+        if (result != ImportResult.Failed && grouped) {
+            "added"
+        } else {
+            "import_failed"
+        }
     } catch (_: Exception) {
         "import_failed"
     }

@@ -127,6 +127,23 @@ class ShelfTabBar @JvmOverloads constructor(
         })
     }
 
+    /** 近白皮肤：只加深底玻璃的染色，不在外层再画一圈边（那圈会落在胶囊之外）。 */
+    internal fun setSkinPale(pale: Boolean) {
+        surface.glassTint = if (pale) 0x8CE0E6EE.toInt() else 0x60FAFAFB
+        invalidate()
+    }
+
+    /** 照片皮肤：降低染色和模糊，让底图能透上来看得出是玻璃。 */
+    internal fun setPhotoSkin(photo: Boolean) {
+        opticalSurface?.apply {
+            tintAlpha = if (photo) 0.10f else 0.24f
+            blurRadius = dp(if (photo) 4 else 9).toFloat()
+            invalidate()
+        }
+        surface.glassTint = if (photo) 0x33FAFAFB else 0x60FAFAFB
+        invalidate()
+    }
+
     fun setBackdropSource(view: View) {
         surface.backdropSource = view
         opticalSurface?.backdropSource = view

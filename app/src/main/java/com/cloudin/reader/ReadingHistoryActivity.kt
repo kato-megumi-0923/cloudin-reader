@@ -11,15 +11,12 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlin.math.roundToInt
 
-class ReadingHistoryActivity : AppCompatActivity() {
+class ReadingHistoryActivity : BaseActivity() {
     private enum class Filter(val title: Int, val empty: Int) {
         IN_PROGRESS(R.string.history_in_progress, R.string.history_no_in_progress),
         COMPLETED(R.string.history_completed, R.string.history_no_completed)
@@ -40,7 +37,6 @@ class ReadingHistoryActivity : AppCompatActivity() {
             overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.stats_enter, R.anim.stats_under_exit)
             overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.stats_under_enter, R.anim.stats_exit)
         }
-        window.useAuroraSystemBars()
         val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -82,11 +78,7 @@ class ReadingHistoryActivity : AppCompatActivity() {
             addView(backdrop, FrameLayout.LayoutParams(-1, -1))
             addView(root, FrameLayout.LayoutParams(-1, -1))
         })
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
+        insetContent(root)
     }
 
     override fun onResume() {

@@ -509,7 +509,10 @@ class DeviceSmokeTest {
         } finally {
             source.delete()
         }
-        val cache = File(context.cacheDir, "reader-pagination/book-${book.id}.bin")
+        // 缓存按「书 + 排版 key」分文件存放，这里取当前这次的缓存文件
+        val cacheDir = File(context.cacheDir, "reader-pagination")
+        fun cacheFile(): File = cacheDir.listFiles()!!
+            .first { it.name.startsWith("book-${book.id}-") && it.name.endsWith(".bin") }
         fun open(expectedOffset: Int, nextOffset: Int? = null): Long {
             val start = SystemClock.elapsedRealtime()
             val reader = instrumentation.startActivitySync(
@@ -538,15 +541,16 @@ class DeviceSmokeTest {
         }
         try {
             val cold = open(0, 375_000)
+            val cache = cacheFile()
             assertTrue("Pagination cache should exist", cache.length() > 0)
             assertTrue(cache.setLastModified(System.currentTimeMillis() - 60_000))
             val writtenAt = cache.lastModified()
             val warm = open(375_000)
-            assertEquals("Reopening should read the cache without rewriting it", writtenAt, cache.lastModified())
+            assertEquals("Reopening should read the cache without rewriting it", writtenAt, cacheFile().lastModified())
             android.util.Log.i("ReaderTest", "Large TXT: cold=${cold}ms, cached=${warm}ms")
         } finally {
             BookStore.remove(context, book)
-            cache.delete()
+            runCatching { cacheFile().delete() }
         }
     }
 }

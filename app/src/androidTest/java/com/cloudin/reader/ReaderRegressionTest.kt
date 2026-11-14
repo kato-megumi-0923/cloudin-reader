@@ -67,6 +67,55 @@ class ReaderRegressionTest {
         assertSame(loaded, CoverThumbnailLoader.cached(key))
     }
 
+    @Test fun corruptLibraryBlocksGroupChangesWithoutRemovingBooks() {
+        val book = (txt("keep-group-member") as ImportResult.Added).book
+        val group = checkNotNull(GroupStore.groupImportedBooks(context, "保留分组", listOf(book.id)))
+        val library = File(root, "library.json").apply { writeText("{") }
+        val groups = File(root, "groups.json")
+        val original = groups.readText()
+
+        assertFalse(GroupStore.remove(context, group.id))
+        assertFalse(GroupStore.remove(context, group.id, deleteBooks = true))
+        assertNull(GroupStore.groupImportedBooks(context, "新分组", listOf(book.id)))
+        assertEquals(original, groups.readText())
+        assertEquals("{", library.readText())
+        assertTrue(File(book.path).isFile)
+    }
+
+    @Test fun restoreRejectsMalformedBackupAndKeepsOnlyReadableBooks() {
+        val kept = (txt("keep-in-library") as ImportResult.Added).book
+        val removed = (txt("remove-from-library") as ImportResult.Added).book
+        val invalidEpub = kept.copy(
+            id = "broken-epub", title = "损坏 EPUB", format = "epub",
+            path = File(BookStore.booksDir(context), "broken-epub_epub").apply {
+                mkdir()
+                File(this, "unrelated.txt").writeText("not an epub")
+            }.path
+        )
+        val oldBooks = listOf(kept, removed, invalidEpub)
+        assertTrue(BookStore.remove(context, removed))
+        val library = File(root, "library.json").apply { writeText("{") }
+        val backup = LibraryBackup.file(context)
+        backup.writeText(BookStore.encode(oldBooks + kept.copy(title = "重复 ID")))
+        assertFalse(BookStore.restore(context).ok)
+        assertEquals("{", library.readText())
+
+        backup.writeText(BookStore.encode(oldBooks))
+        val report = BookStore.restore(context)
+        assertTrue(report.ok)
+        assertEquals(listOf(removed.title, invalidEpub.title), report.dropped)
+        assertEquals(listOf(kept.path), BookStore.load(context).map { it.path })
+    }
+
+    @Test fun restoreVerifiesRelocatedTxtAgainstItsHash() {
+        val book = (txt("relocated-book") as ImportResult.Added).book
+        val relocated = book.copy(path = File(root, "old-books/${book.id}.txt").path)
+        assertEquals(book.path, LibraryBackup.resolveBook(context, relocated)?.path)
+
+        File(book.path).writeText("different book")
+        assertNull(LibraryBackup.resolveBook(context, relocated))
+    }
+
     @Test fun bundledCoverLoadsAsSharedThumbnail() {
         val key = CoverThumbnailLoader.resourceKey(context, R.drawable.reader_texture_kraft, 140, 200)
         val ready = CountDownLatch(2)
@@ -449,15 +498,54 @@ class ReaderRegressionTest {
         val firstPages = listOf(0..4, 5..9)
         val secondPages = listOf(0..9)
         val directory = File(root, "reader-pagination")
+        // 新版缓存按「书 + 排版 key」命名，旧版是 book-<id>.bin / <hashCode>.bin
         val legacy = File(directory, "${firstId.hashCode()}.bin")
         first.write(firstKey, firstPages)
-        assertTrue(File(directory, "book-$firstId.bin").renameTo(legacy))
+        val current = File(directory.listFiles()!!.first { it.name.startsWith("book-$firstId-") }.absolutePath)
+        assertTrue(current.renameTo(legacy))
         assertNull(second.read(secondKey, document.text.length))
         second.write(secondKey, secondPages)
         assertEquals(firstPages, first.read(firstKey, document.text.length))
         assertFalse(legacy.exists())
         assertEquals(firstPages, first.read(firstKey, document.text.length))
         assertEquals(secondPages, second.read(secondKey, document.text.length))
+    }
+
+    @Test fun paginationCacheKeepsRecentLayoutsAndRefreshesAccessOnHit() {
+        val cache = PaginationCache(root, "multi-layout")
+        val document = Document("测试", "0123456789", emptyList())
+        val pages = listOf(0..4, 5..9)
+        val keys = listOf("a", "b", "c", "d", "e").map { cache.key(document, it) }
+        // 先写 a 再写 b..e：a 会被淘汰，其余四份共存
+        keys.forEach { key -> cache.write(key, pages) }
+        val slots = File(root, "reader-pagination")
+            .listFiles { file -> file.name.startsWith("book-multi-layout-") && file.name.endsWith(".bin") }!!
+        assertEquals(4, slots.size)
+        // 切回用过的排版必须命中
+        assertEquals(pages, cache.read(keys[3], document.text.length))
+        assertEquals(pages, cache.read(keys[4], document.text.length))
+        // 命中会刷新访问时间，继续写入新排版时不能把刚用过的挤掉
+        cache.write(cache.key(document, "f"), pages)
+        assertEquals(pages, cache.read(keys[4], document.text.length))
+    }
+
+    @Test fun paginationCacheEnforcesTotalSizeAcrossBooks() {
+        val directory = File(root, "reader-pagination").apply { mkdir() }
+        val legacy = List(2) { index ->
+            File(directory, "book-old-$index.bin").apply {
+                java.io.RandomAccessFile(this, "rw").use { it.setLength(17L * 1024 * 1024) }
+                setLastModified(1_000L + index)
+            }
+        }
+        val cache = PaginationCache(root, "new-book")
+        val document = Document("测试", "0123456789", emptyList())
+        val key = cache.key(document, "layout")
+        val pages = listOf(0..9)
+        cache.write(key, pages)
+
+        assertFalse(legacy[0].exists())
+        assertTrue(legacy[1].exists())
+        assertEquals(pages, cache.read(key, document.text.length))
     }
 
     @Test fun scrollingWithinOneLineSkipsRepeatedProgressAndStillReportsCompletion() = onMain {
@@ -539,7 +627,10 @@ class ReaderRegressionTest {
         assertEquals(anchor, view.currentOffset())
         view.advanceScroll(480f)
         val scrolled = view.currentOffset()
-        assertTrue(scrolled > anchor)
+        assertTrue(
+            "scrolled=$scrolled anchor=$anchor pages=${component<Paginator>(view, "paginator").pages.size}",
+            scrolled > anchor
+        )
         view.layout(0, 0, 1000, 800)
         assertEquals(scrolled, view.currentOffset())
         view.setDoubleColumns(false)

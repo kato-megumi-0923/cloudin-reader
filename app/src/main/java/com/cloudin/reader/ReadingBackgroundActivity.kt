@@ -10,16 +10,13 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
-class ReadingBackgroundActivity : AppCompatActivity() {
+class ReadingBackgroundActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.useAuroraSystemBars()
         val ink = getColor(R.color.ink)
         val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val root = LinearLayout(this).apply {
@@ -57,11 +54,7 @@ class ReadingBackgroundActivity : AppCompatActivity() {
             addView(backdrop, FrameLayout.LayoutParams(-1, -1))
             addView(root, FrameLayout.LayoutParams(-1, -1))
         })
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
+        insetContent(root)
         ViewCompat.requestApplyInsets(root)
     }
 
@@ -120,6 +113,7 @@ class ReadingBackgroundActivity : AppCompatActivity() {
                 val previous = ReaderPrefs.theme(this@ReadingBackgroundActivity)
                 if (previous != palette.id) {
                     ReaderPrefs.setTheme(this@ReadingBackgroundActivity, palette.id)
+                    SkinSync.onReaderTheme(this@ReadingBackgroundActivity, palette.dark)
                     setResult(RESULT_OK)
                     val previousPosition = ReaderPrefs.themes.indexOfFirst { it.id == previous }
                     if (previousPosition >= 0) notifyItemChanged(previousPosition)

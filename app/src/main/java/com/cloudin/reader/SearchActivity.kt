@@ -18,15 +18,12 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONArray
 
 /** 搜索书架：按书名/作者过滤，保留最近搜索记录。 */
-class SearchActivity : AppCompatActivity() {
+class SearchActivity : BaseActivity() {
     private val paper = 0xFFFAF7F1.toInt()
     private val ink = 0xFF332C26.toInt()
     private val muted = 0xFF786D64.toInt()
@@ -46,7 +43,6 @@ class SearchActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.useAuroraSystemBars()
         books = BookStore.load(this).sortedByDescending { it.lastRead }
 
         val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
@@ -138,13 +134,7 @@ class SearchActivity : AppCompatActivity() {
             addView(root, FrameLayout.LayoutParams(-1, -1))
         })
 
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-            )
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
+        insetContent(root)
 
         val preset = intent.getStringExtra(EXTRA_QUERY)
         if (!preset.isNullOrBlank()) {
