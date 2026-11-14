@@ -18,6 +18,8 @@ class SettingsActivity : BaseActivity() {
 
     override val systemBarDark: Boolean get() = SkinStore.load(this).dark
 
+    override val reloadsOnSkinChange: Boolean get() = true
+
     private lateinit var backdrop: View
     private lateinit var pageRoot: View
     private lateinit var list: LinearLayout
@@ -59,8 +61,14 @@ class SettingsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!::list.isInitialized) return
+        // 明暗变了说明期间皮肤换过，背景与标题是旧配色，整页重建才不会混搭
+        if (SkinStore.load(this).dark != dark) {
+            recreate()
+            return
+        }
         // 从子页面回来时右侧的值可能已经变了
-        if (::list.isInitialized) rebuild()
+        rebuild()
     }
 
     private fun rebuild() {

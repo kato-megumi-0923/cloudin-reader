@@ -15,6 +15,8 @@ class ReadingSettingsActivity : BaseActivity() {
 
     override val systemBarDark: Boolean get() = SkinStore.load(this).dark
 
+    override val reloadsOnSkinChange: Boolean get() = true
+
     private lateinit var backdrop: View
     private lateinit var pageRoot: View
     private lateinit var list: LinearLayout
@@ -56,7 +58,12 @@ class ReadingSettingsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::list.isInitialized) rebuild()
+        if (!::list.isInitialized) return
+        if (SkinStore.load(this).dark != dark) {
+            recreate()
+            return
+        }
+        rebuild()
     }
 
     private fun rebuild() {

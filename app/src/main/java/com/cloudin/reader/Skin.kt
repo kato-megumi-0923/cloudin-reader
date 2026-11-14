@@ -1,6 +1,7 @@
 package com.cloudin.reader
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -109,7 +110,12 @@ internal object SkinStore {
             .putString(KEY_PHOTO, skin.photoPath)
             .putBoolean(KEY_DARK, skin.dark)
             .apply()
+        // 通知正在显示的设置类页面重建：否则背景/标题是旧配色、卡片是新配色
+        context.sendBroadcast(Intent(ACTION_CHANGED).setPackage(context.packageName))
     }
+
+    /** 皮肤变化广播，只在应用内传递。 */
+    const val ACTION_CHANGED = "com.cloudin.reader.SKIN_CHANGED"
 
     fun skinsDir(context: Context): File = File(context.filesDir, "skins").apply { mkdirs() }
 

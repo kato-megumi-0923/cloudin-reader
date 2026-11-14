@@ -28,6 +28,8 @@ class NightModeActivity : BaseActivity() {
 
     override val systemBarDark: Boolean get() = SkinStore.load(this).dark
 
+    override val reloadsOnSkinChange: Boolean get() = true
+
     private lateinit var backdrop: View
     private lateinit var pageRoot: View
     private lateinit var list: LinearLayout

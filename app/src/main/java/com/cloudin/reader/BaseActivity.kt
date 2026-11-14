@@ -1,9 +1,14 @@
 package com.cloudin.reader
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
@@ -23,9 +28,41 @@ abstract class BaseActivity : AppCompatActivity() {
     /** 系统栏图标是否应按深色底处理（true = 浅色图标）。 */
     protected open val systemBarDark: Boolean get() = false
 
+    /**
+     * 皮肤变化时是否整页重建。设置类页面的背景、标题、卡片分别在 onCreate 与 rebuild 里取色，
+     * 只在局部刷新会出现「深色背景 + 白卡片」这种混搭，所以干脆重建。阅读页不参与。
+     */
+    protected open val reloadsOnSkinChange: Boolean get() = false
+
+    private val skinReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (reloadsOnSkinChange && !isFinishing) recreate()
+        }
+    }
+    private var skinReceiverRegistered = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.useAuroraSystemBars()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (reloadsOnSkinChange && !skinReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this, skinReceiver, IntentFilter(SkinStore.ACTION_CHANGED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            skinReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (skinReceiverRegistered) {
+            unregisterReceiver(skinReceiver)
+            skinReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     override fun onResume() {
