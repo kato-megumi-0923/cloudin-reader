@@ -35,6 +35,14 @@
             android:name=".SettingsActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:exported="false" />
+        <activity
+            android:name=".ReadingSettingsActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:exported="false" />
+        <activity
+            android:name=".NightModeActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:exported="false" />
 
         <activity android:name=".ReadingStatsActivity" android:exported="false" />
         <activity android:name=".ReadingHistoryActivity" android:exported="false" />

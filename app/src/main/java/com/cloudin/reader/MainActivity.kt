@@ -37,6 +37,9 @@ import java.io.File
 
 private const val PROFILE_CARD_WIDTH_DP = 345
 
+/** 自动夜间的时间检查间隔。 */
+private const val NIGHT_CHECK_INTERVAL = 60_000L
+
 class MainActivity : BaseActivity() {
 
     override val systemBarDark: Boolean get() = SkinStore.load(this).dark
@@ -77,6 +80,9 @@ class MainActivity : BaseActivity() {
     private var restoreAttempted = false
     private var libraryFailed = false
 
+    /** 自动夜间的时间检查：每分钟一次，只在真切换时才刷新。 */
+    private val nightTicker = android.os.Handler(android.os.Looper.getMainLooper())
+
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
@@ -99,6 +105,8 @@ class MainActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 自动 / 跟随系统的夜间切换：先落到偏好，后面读到主题与主题皮肤就是最新状态
+        NightMode.apply(this)
         openedBookId = savedInstanceState?.getString("opened_book_id")
         setContentView(R.layout.activity_main)
 
@@ -244,10 +252,28 @@ class MainActivity : BaseActivity() {
                 }
             }
         })
+
+        // 自动夜间只在整点/半点附近生效太粗糙，这里每分钟看一次时间区间；
+        // 只有真的切换了才刷新书架
+        nightTicker.postDelayed(nightCheck, NIGHT_CHECK_INTERVAL)
+    }
+
+    private val nightCheck = object : Runnable {
+        override fun run() {
+            if (NightMode.apply(this@MainActivity)) reload()
+            nightTicker.postDelayed(this, NIGHT_CHECK_INTERVAL)
+        }
+    }
+
+    override fun onDestroy() {
+        nightTicker.removeCallbacks(nightCheck)
+        super.onDestroy()
     }
 
     override fun onResume() {
         super.onResume()
+        // 自动 / 跟随系统可能在后台期间改变了夜间状态
+        NightMode.apply(this)
         reload()
         // 设置页可能改过书架布局与玻璃样式，回来时同步一次（applyTo 幂等）
         val storedLayout =
@@ -372,6 +398,8 @@ class MainActivity : BaseActivity() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        // 跟随系统时，系统切深浅色会走到这里
+        if (NightMode.apply(this)) reload()
         applyLayoutMode()
         recycler.post { refreshBackdrop() }
     }

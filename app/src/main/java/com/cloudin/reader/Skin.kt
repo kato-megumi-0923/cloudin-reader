@@ -42,6 +42,9 @@ internal data class Skin(
         const val WHITE = 0xFFFFFFFF.toInt()
         const val INK_BLACK = 0xFF1A1D24.toInt()
 
+        /** 夜间「不用深灰配色」时的纯黑底。 */
+        const val NIGHT_BLACK = 0xFF000000.toInt()
+
         val AURORA = Skin(SkinKind.AURORA)
         val PURE_WHITE = Skin(SkinKind.COLOR, WHITE)
         val COOL_BLACK = Skin(SkinKind.COLOR, INK_BLACK, dark = true)
@@ -260,7 +263,9 @@ internal object SkinSync {
         if (p.getString(KEY_BEFORE_NIGHT, null) == null) {
             p.edit().putString(KEY_BEFORE_NIGHT, encode(current)).apply()
         }
-        SkinStore.save(context, Skin.COOL_BLACK)
+        // 夜间底色跟随「夜间使用深灰配色」：开 = 深灰，关 = 纯黑
+        val color = if (NightMode.darkGray(context)) Skin.INK_BLACK else Skin.NIGHT_BLACK
+        SkinStore.save(context, Skin(SkinKind.COLOR, color, dark = true))
     }
 
     private fun leaveNight(context: Context) {
@@ -292,9 +297,9 @@ internal object SkinSync {
     }.getOrNull()
 }
 
-/** 皮肤处理后的身份判断：炫酷黑即「夜间默认皮肤」。 */
+/** 皮肤处理后的身份判断：炫酷黑 / 纯黑都算「夜间默认皮肤」。 */
 internal val Skin.isCoolBlack: Boolean
-    get() = kind == SkinKind.COLOR && color == Skin.INK_BLACK
+    get() = kind == SkinKind.COLOR && (color == Skin.INK_BLACK || color == Skin.NIGHT_BLACK)
 
 /**
  * 深色皮肤下的文字配色。只改写「本来就是书架浅色」的那几个色值，
