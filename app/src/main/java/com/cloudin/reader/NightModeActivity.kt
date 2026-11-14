@@ -1,14 +1,18 @@
 package com.cloudin.reader
 
-import android.app.TimePickerDialog
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import androidx.activity.ComponentDialog
 import androidx.core.view.ViewCompat
 
 /**
@@ -77,6 +81,12 @@ class NightModeActivity : BaseActivity() {
         }
         card.addSettingRow(dark, "自动切换夜间模式", clickable = false, trailing = auto)
 
+        // 自动关掉时，下面的时段与跟随系统都收起来；跟随系统仍开着则继续显示（否则没法关）
+        if (!NightMode.auto(this) && !NightMode.followSystem(this)) {
+            list.addView(card, LinearLayout.LayoutParams(-1, -2))
+            return
+        }
+
         // 2. 时间段
         card.addSettingRow(dark, "自定义夜间启用时间区间", clickable = false)
         val times = LinearLayout(this).apply {
@@ -84,14 +94,14 @@ class NightModeActivity : BaseActivity() {
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setPadding(readerDp(18), 0, readerDp(16), readerDp(12))
         }
-        times.addView(timeButton(NightMode.startMinute(this)) { picked ->
+        times.addView(timeButton(NightMode.startMinute(this), isStart = true) { picked ->
             NightMode.setStartMinute(this, picked)
             applyAndRefresh()
         }, LinearLayout.LayoutParams(readerDp(96), readerDp(40)))
         times.addView(readerLabel("至", SkinTheme.soft(dark), 13f).apply {
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(readerDp(34), -1))
-        times.addView(timeButton(NightMode.endMinute(this)) { picked ->
+        times.addView(timeButton(NightMode.endMinute(this), isStart = false) { picked ->
             NightMode.setEndMinute(this, picked)
             applyAndRefresh()
         }, LinearLayout.LayoutParams(readerDp(96), readerDp(40)))
@@ -125,7 +135,7 @@ class NightModeActivity : BaseActivity() {
         return if (Build.VERSION.SDK_INT < 29) "$base（当前系统低于 Android 9，此项不生效）" else base
     }
 
-    private fun timeButton(minute: Int, onPick: (Int) -> Unit): View =
+    private fun timeButton(minute: Int, isStart: Boolean, onPick: (Int) -> Unit): View =
         GlassActionButton(this).apply {
             text = NightMode.timeText(minute)
             textView.setTextColor(SkinTheme.title(dark))
@@ -136,14 +146,73 @@ class NightModeActivity : BaseActivity() {
             frosted = GlassStyle.load(context) == GlassStyle.FROSTED
             useControlOptics(20f)
             setGlassClickListener {
-                TimePickerDialog(
-                    this@NightModeActivity,
-                    { _, hour, min ->
-                        onPick(hour * 60 + min)
-                    },
-                    minute / 60, minute % 60, true
-                ).show()
+                showTimePicker(isStart, minute, onPick)
             }
+        }
+
+    /** 滚轮式时间选择：标题 + 时/分两列 + 右下「取消 / 确定」，样式对齐参考图。 */
+    private fun showTimePicker(isStart: Boolean, initial: Int, onPick: (Int) -> Unit) {
+        var picked = initial
+        val dialog = ComponentDialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(readerDp(22), readerDp(20), readerDp(18), readerDp(10))
+        }
+        content.addView(readerLabel(if (isStart) "开始时间" else "结束时间", SkinTheme.title(dark), 17f)
+            .apply { gravity = Gravity.START }, LinearLayout.LayoutParams(-1, -2))
+        content.addView(timeWheelRow(initial, dark) { picked = it },
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = readerDp(4)
+            })
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        actions.addView(timeAction("取消", SkinTheme.soft(dark)) { dialog.dismiss() })
+        actions.addView(timeAction("确定", 0xFFD8453F.toInt()) {
+            dialog.dismiss()
+            onPick(picked)
+        })
+        content.addView(actions, LinearLayout.LayoutParams(-1, readerDp(48)))
+
+        content.background = GradientDrawable().apply {
+            cornerRadius = readerDp(26).toFloat()
+            setColor(0x2EFFFFFF)
+        }
+        val skin = SkinStore.load(this)
+        val glass = AgslGlassView(this).apply {
+            cornerRadius = readerDp(26).toFloat()
+            blurRadius = readerDp(11).toFloat()
+            tintColor = if (skin.pale) 0xFFDDE4ED.toInt() else Color.WHITE
+            tintAlpha = if (skin.pale) 0.46f else 0.10f
+            dispersion = 0.16f
+            usePopupOptics()
+        }
+        glass.addView(content, FrameLayout.LayoutParams(-1, -2))
+        dialog.setContentView(glass)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(if (dark) 0.20f else 0.06f)
+        }
+        dialog.show()
+        val width = minOf(
+            readerDp(345),
+            (resources.displayMetrics.widthPixels - readerDp(32)).coerceAtLeast(1)
+        )
+        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setGravity(Gravity.CENTER)
+        glass.backdropSource = pageRoot
+        GlassStyle.load(this).applyTo(glass)
+    }
+
+    private fun timeAction(label: String, color: Int, action: () -> Unit): View =
+        readerLabel(label, color, 15f).apply {
+            setPadding(readerDp(16), readerDp(10), readerDp(16), readerDp(10))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
         }
 
     private fun applyAndRefresh() {
