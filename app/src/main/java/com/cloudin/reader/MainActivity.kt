@@ -249,6 +249,15 @@ class MainActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         reload()
+        // 设置页可能改过书架布局与玻璃样式，回来时同步一次（applyTo 幂等）
+        val storedLayout =
+            if (prefs().getString("shelf_layout", "grid") == "list") ShelfLayout.LIST else ShelfLayout.GRID
+        if (storedLayout != layoutMode) {
+            layoutMode = storedLayout
+            applyLayoutMode()
+            recycler.post { refreshBackdrop() }
+        }
+        findViewById<View?>(R.id.root)?.let { GlassStyle.load(this).applyTo(it) }
         openedBookId?.let { id ->
             val position = books.indexOfFirst { it.id == id }
             if (position >= 0) recycler.scrollToPosition(position)
@@ -557,7 +566,9 @@ class MainActivity : BaseActivity() {
             openProfilePage(ReadingStatsActivity::class.java)
         }
         profilePage.findViewById<View>(R.id.profileAbout).setOnClickListener { showAboutCard() }
-        profilePage.findViewById<View>(R.id.profileSettings).setOnClickListener { showProfileSettings() }
+        profilePage.findViewById<View>(R.id.profileSettings).setOnClickListener {
+            openProfilePage(SettingsActivity::class.java)
+        }
     }
 
     private fun openProfilePage(destination: Class<out AppCompatActivity>) {
@@ -573,15 +584,6 @@ class MainActivity : BaseActivity() {
         return if (minutes >= 60) getString(R.string.profile_duration_hours_minutes, minutes / 60, minutes % 60)
         else getString(R.string.profile_duration_minutes, minutes)
     }
-
-    private enum class ProfileSettingsPage { TURN, SHELF, GLASS }
-
-    private data class ProfileSetting(
-        val title: String,
-        val choices: List<String>,
-        val selected: () -> Int,
-        val apply: (Int) -> Unit
-    )
 
     private fun showAboutCard() {
         val info = packageManager.getPackageInfo(packageName, 0)
@@ -608,102 +610,6 @@ class MainActivity : BaseActivity() {
         bindLink(R.id.aboutProject, R.string.about_project, R.drawable.ic_about_project, projectUrl)
         bindLink(R.id.aboutReleases, R.string.about_releases, R.drawable.ic_about_releases, "$projectUrl/releases")
         content.findViewById<GlassActionButton>(R.id.cardCancel).setGlassClickListener { dialog.dismiss() }
-        showCard(dialog, content, widthDp = PROFILE_CARD_WIDTH_DP)
-    }
-    private fun showProfileSettings() {
-        val dialog = ComponentDialog(this)
-        val content = layoutInflater.inflate(R.layout.dialog_group_card, null)
-        val cardTitle = content.findViewById<TextView>(R.id.cardTitle)
-        val rows = content.findViewById<LinearLayout>(R.id.cardRows)
-        val back = content.findViewById<GlassActionButton>(R.id.cardBack)
-        val backdrop = findViewById<View>(R.id.root)
-        val color = getColor(R.color.shelf_title)
-        val settings = linkedMapOf(
-            ProfileSettingsPage.SHELF to ProfileSetting("书架布局", listOf("网格", "列表"), { layoutMode.ordinal }) {
-                if (it != layoutMode.ordinal) toggleLayout()
-            },
-            ProfileSettingsPage.GLASS to ProfileSetting(
-                getString(R.string.profile_glass_style),
-                GlassStyle.entries.map { getString(it.label) },
-                { GlassStyle.load(this).ordinal }
-            ) {
-                val style = GlassStyle.entries[it]
-                style.save(this)
-                style.applyTo(backdrop)
-                style.applyTo(content.rootView)
-            }
-        )
-
-        content.findViewById<View>(R.id.cardCancel).visibility = View.GONE
-        content.setPadding(0, 0, 0, dp(14))
-        rows.gravity = Gravity.CENTER_VERTICAL
-        back.visibility = View.VISIBLE
-        back.useBackIcon(color)
-
-        var current: ProfileSettingsPage? = null
-        var transitioning = false
-        lateinit var navigate: (ProfileSettingsPage?) -> Unit
-
-        fun render(page: ProfileSettingsPage?) {
-            current = page
-            rows.removeAllViews()
-            if (page == null) {
-                rows.minimumHeight = dp(56) * (settings.size + 4)
-                rows.setPadding(0, 0, 0, 0)
-                cardTitle.text = getString(R.string.profile_settings)
-                // 深色玻璃底画半透明白线，浅色底画半透明黑线
-                val divider = if (SkinStore.load(this).dark) 0x4DFFFFFF else 0x1F000000
-                addCardRow(content, "主题", color) { openProfilePage(SkinActivity::class.java) }
-                addCardRow(content, "默认封面", color, dividerColor = divider) { openProfilePage(DefaultCoverActivity::class.java) }
-                addCardRow(content, getString(R.string.reader_background), color, dividerColor = divider) { openProfilePage(ReadingBackgroundActivity::class.java) }
-                addCardRow(content, getString(R.string.reader_turn_mode), color, dividerColor = divider) { navigate(ProfileSettingsPage.TURN) }
-                settings.forEach { (destination, item) ->
-                    addCardRow(content, item.title, color, dividerColor = divider) { navigate(destination) }
-                }
-                return
-            }
-
-            rows.minimumHeight = 0
-            rows.setPadding(dp(14), dp(4), dp(14), dp(6))
-            if (page == ProfileSettingsPage.TURN) {
-                cardTitle.text = getString(R.string.reader_turn_mode)
-                rows.addView(readerTurnOptions(ReaderPrefs.THEME_PURE_WHITE, backdrop) {},
-                    LinearLayout.LayoutParams(-1, -2))
-            } else {
-                val setting = settings.getValue(page)
-                cardTitle.text = setting.title
-                rows.addView(readerSegments(setting.choices, setting.selected(), ReaderPrefs.THEME_PURE_WHITE,
-                    backdrop, setting.title, vertical = true, onSelect = setting.apply),
-                    LinearLayout.LayoutParams(-1, dp(48) * setting.choices.size + dp(4)))
-            }
-        }
-
-        navigate = { setting ->
-            if (!transitioning) {
-                transitioning = true
-                val end = if (rows.layoutDirection == View.LAYOUT_DIRECTION_RTL) -1 else 1
-                val offset = dp(22).toFloat() * end * if (setting == null) -1 else 1
-                rows.animate().alpha(0f).translationX(-offset).setDuration(95).withEndAction {
-                    if (dialog.isShowing) {
-                        render(setting)
-                        rows.translationX = offset
-                        rows.animate().alpha(1f).translationX(0f).setDuration(175)
-                            .withEndAction { transitioning = false }.start()
-                    }
-                }.start()
-            }
-        }
-
-        fun goBack() {
-            if (!transitioning) {
-                if (current == null) dialog.dismiss() else navigate(null)
-            }
-        }
-
-        back.setGlassClickListener { goBack() }
-        dialog.onBackPressedDispatcher.addCallback(dialog) { goBack() }
-        dialog.setCanceledOnTouchOutside(true)
-        render(null)
         showCard(dialog, content, widthDp = PROFILE_CARD_WIDTH_DP)
     }
 
@@ -785,19 +691,9 @@ class MainActivity : BaseActivity() {
         color: Int,
         clickable: Boolean = true,
         selected: Boolean = false,
-        dividerColor: Int = Color.TRANSPARENT,
         onClick: (View) -> Unit = {}
     ) {
         val rows = content.findViewById<LinearLayout>(R.id.cardRows)
-        // 行间分割线：左右缩进与文字对齐；非透明才画
-        if (dividerColor != Color.TRANSPARENT) {
-            val divider = View(content.context)
-            divider.setBackgroundColor(dividerColor)
-            rows.addView(divider, LinearLayout.LayoutParams(-1, dp(1)).apply {
-                marginStart = dp(26)
-                marginEnd = dp(26)
-            })
-        }
         val row = layoutInflater.inflate(R.layout.row_dialog_action, rows, false)
         val text = row.findViewById<TextView>(R.id.cardRowText)
         setCardRowSelection(row, label, selected)
