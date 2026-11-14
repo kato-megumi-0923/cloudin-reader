@@ -34,10 +34,11 @@ class NightModeActivity : BaseActivity() {
     private lateinit var autoDot: RadioDot
     private lateinit var followDot: RadioDot
     private lateinit var timesRow: LinearLayout
-    private lateinit var autoRow: View
-    private lateinit var followRow: View
+    private lateinit var autoRow: LinearLayout
+    private lateinit var followRow: LinearLayout
     private lateinit var masterSwitch: GlassSwitch
     private lateinit var hintView: View
+    private lateinit var autoValueView: android.widget.TextView
     private var dark = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,15 +89,23 @@ class NightModeActivity : BaseActivity() {
         }
         card.addSettingRow(dark, "自动切换夜间模式", clickable = false, trailing = masterSwitch)
 
+        // 圆点保留上一次的选择（整行变淡），关闭时也能看出之前配的是什么
         autoDot = RadioDot(this).apply {
             this.dark = this@NightModeActivity.dark
-            bind(NightMode.auto(this@NightModeActivity) && on)
+            bind(NightMode.auto(this@NightModeActivity))
         }
         autoRow = card.addSettingRow(
             dark, "自定义夜间启用时间区间", leading = autoDot, showArrow = false
         ) {
             if (NightMode.enabled(this@NightModeActivity)) toggleTimeRange()
         }.apply { alpha = if (on) 1f else DISABLED_ALPHA }
+
+        // 关闭时在行尾显示上次配置的时间，打开时下面已经有两个时间按钮，就不再重复
+        autoValueView = readerLabel(timeRangeText(), SkinTheme.soft(dark), 13f).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = if (on) View.GONE else View.VISIBLE
+        }
+        autoRow.addView(autoValueView, LinearLayout.LayoutParams(-2, -1))
 
         timesRow = buildTimes().apply {
             val visible = on && NightMode.auto(this@NightModeActivity)
@@ -107,7 +116,7 @@ class NightModeActivity : BaseActivity() {
 
         followDot = RadioDot(this).apply {
             this.dark = this@NightModeActivity.dark
-            bind(NightMode.followSystem(this@NightModeActivity) && on)
+            bind(NightMode.followSystem(this@NightModeActivity))
         }
         followRow = card.addSettingRow(
             dark, "跟随系统", leading = followDot, showArrow = false
@@ -186,11 +195,16 @@ class NightModeActivity : BaseActivity() {
         if (changed) list.postDelayed({ recreate() }, 280)
     }
 
+    private fun timeRangeText(): String =
+        NightMode.timeText(NightMode.startMinute(this)) + " - " + NightMode.timeText(NightMode.endMinute(this))
+
     private fun syncEnabledUi() {
         if (!::autoRow.isInitialized) return
         val on = NightMode.enabled(this)
         val target = if (on) 1f else DISABLED_ALPHA
         autoRow.animate().alpha(target).setDuration(160).start()
+        autoValueView.text = timeRangeText()
+        autoValueView.visibility = if (on) View.GONE else View.VISIBLE
         followRow.animate().alpha(target).setDuration(160).start()
         hintView.animate().alpha(target).setDuration(160).start()
         syncChoices()
@@ -201,8 +215,8 @@ class NightModeActivity : BaseActivity() {
         if (!::autoDot.isInitialized) return
         val on = NightMode.enabled(this)
         if (::masterSwitch.isInitialized) masterSwitch.checked = on
-        autoDot.chosen = NightMode.auto(this) && on
-        followDot.chosen = NightMode.followSystem(this) && on
+        autoDot.chosen = NightMode.auto(this)
+        followDot.chosen = NightMode.followSystem(this)
         animateTimesVisible(on && NightMode.auto(this))
     }
 
