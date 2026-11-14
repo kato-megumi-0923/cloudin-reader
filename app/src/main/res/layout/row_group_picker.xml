@@ -12,7 +12,8 @@
         android:layout_width="20dp"
         android:layout_height="20dp"
         android:layout_marginEnd="14dp"
-        android:src="@drawable/ic_folder_outline" />
+        android:src="@drawable/ic_folder_outline"
+        android:tint="@color/ink" />
 
     <TextView
         android:id="@+id/rowName"

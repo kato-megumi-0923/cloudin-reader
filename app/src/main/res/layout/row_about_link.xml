@@ -32,5 +32,5 @@
         android:layout_height="18dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_profile_chevron"
-        android:tint="#796F63" />
+        android:tint="@color/ink_soft" />
 </LinearLayout>

@@ -35,7 +35,8 @@
                     android:layout_width="26dp"
                     android:layout_height="26dp"
                     android:importantForAccessibility="no"
-                    android:src="@drawable/ic_profile_recent" />
+                    android:src="@drawable/ic_profile_recent"
+                    android:tint="@color/ink" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -72,7 +73,8 @@
                     android:layout_width="26dp"
                     android:layout_height="26dp"
                     android:importantForAccessibility="no"
-                    android:src="@drawable/ic_profile_stats" />
+                    android:src="@drawable/ic_profile_stats"
+                    android:tint="@color/ink" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -110,7 +112,8 @@
                 android:layout_width="22dp"
                 android:layout_height="22dp"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_profile_settings" />
+                android:src="@drawable/ic_profile_settings"
+                android:tint="@color/ink" />
 
             <TextView
                 android:layout_width="0dp"
@@ -126,7 +129,8 @@
                 android:layout_height="18dp"
                 android:alpha="0.45"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_profile_chevron" />
+                android:src="@drawable/ic_profile_chevron"
+                android:tint="@color/ink" />
         </LinearLayout>
 
         <View
@@ -151,7 +155,8 @@
                 android:layout_width="22dp"
                 android:layout_height="22dp"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_profile_about" />
+                android:src="@drawable/ic_profile_about"
+                android:tint="@color/ink" />
 
             <TextView
                 android:layout_width="0dp"
@@ -167,7 +172,8 @@
                 android:layout_height="18dp"
                 android:alpha="0.45"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_profile_chevron" />
+                android:src="@drawable/ic_profile_chevron"
+                android:tint="@color/ink" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
