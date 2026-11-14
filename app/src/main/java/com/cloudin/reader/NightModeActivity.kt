@@ -65,30 +65,19 @@ class NightModeActivity : BaseActivity() {
         list.removeAllViews()
         val card = settingCard(dark)
 
-        // 1. 夜间底用纯黑还是深灰
-        val pure = GlassSwitch(this).apply {
-            this.dark = this@NightModeActivity.dark
-            bind(NightMode.pureBlack(this@NightModeActivity))
-            onCheckedChange = { on ->
-                NightMode.setPureBlack(this@NightModeActivity, on)
-                applyAndRefresh()
-            }
-        }
-        card.addSettingRow(dark, "夜间使用纯黑配色", clickable = false, trailing = pure)
-
-        // 2. 按时间自动切换
+        // 1. 按时间自动切换
         val auto = GlassSwitch(this).apply {
             this.dark = this@NightModeActivity.dark
             bind(NightMode.auto(this@NightModeActivity))
             onCheckedChange = { on ->
                 NightMode.setAuto(this@NightModeActivity, on)
-                if (on) NightMode.setFollowSystem(this@NightModeActivity, false)
+                if (on) NightMode.setFollowSystem(this@NightModeActivity, false) else NightMode.exitNight(this@NightModeActivity)
                 applyAndRefresh()
             }
         }
         card.addSettingRow(dark, "自动切换夜间模式", clickable = false, trailing = auto)
 
-        // 3. 时间段
+        // 2. 时间段
         card.addSettingRow(dark, "自定义夜间启用时间区间", clickable = false)
         val times = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -108,7 +97,7 @@ class NightModeActivity : BaseActivity() {
         }, LinearLayout.LayoutParams(readerDp(96), readerDp(40)))
         card.addView(times, LinearLayout.LayoutParams(-1, -2))
 
-        // 4. 跟随系统
+        // 3. 跟随系统
         val follow = NightMode.followSystem(this)
         val dot = RadioDot(this).apply { chosen = follow }
         card.addSettingRow(dark, "跟随系统", clickable = false, trailing = dot).apply {
@@ -117,12 +106,12 @@ class NightModeActivity : BaseActivity() {
             setOnClickListener {
                 val next = !NightMode.followSystem(this@NightModeActivity)
                 NightMode.setFollowSystem(this@NightModeActivity, next)
-                if (next) NightMode.setAuto(this@NightModeActivity, false)
+                if (next) NightMode.setAuto(this@NightModeActivity, false) else NightMode.exitNight(this@NightModeActivity)
                 applyAndRefresh()
             }
         }
 
-        // 5. 说明
+        // 4. 说明
         card.addView(readerLabel(hint(), SkinTheme.soft(dark), 12f).apply {
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setPadding(readerDp(18), 0, readerDp(18), readerDp(14))

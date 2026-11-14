@@ -14,7 +14,6 @@ import java.util.Calendar
 internal object NightMode {
 
     private const val PREFS = "night_mode"
-    private const val KEY_PURE_BLACK = "pure_black"
     private const val KEY_AUTO = "auto"
     private const val KEY_START = "start"
     private const val KEY_END = "end"
@@ -24,12 +23,6 @@ internal object NightMode {
     private const val DEFAULT_END = 7 * 60
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
-    /** 夜间底是否用纯黑（默认）；关闭则用深灰。 */
-    fun pureBlack(context: Context) = prefs(context).getBoolean(KEY_PURE_BLACK, true)
-    fun setPureBlack(context: Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_PURE_BLACK, value).apply()
-    }
 
     fun auto(context: Context) = prefs(context).getBoolean(KEY_AUTO, false)
     fun setAuto(context: Context, value: Boolean) {
@@ -71,26 +64,30 @@ internal object NightMode {
         return ReaderPrefs.palette(ReaderPrefs.theme(context)).dark
     }
 
-    fun nightTheme(context: Context): Int =
-        if (pureBlack(context)) ReaderPrefs.THEME_BLACK else ReaderPrefs.THEME_NIGHT
+    /** 夜间阅读底固定纯黑，书架主题固定炫酷黑（与主题页的「炫酷黑」是同一个）。 */
+    fun nightTheme(context: Context): Int = ReaderPrefs.THEME_BLACK
 
     /**
      * 把当前应该处于的状态落到阅读主题与书架主题上。返回是否真的改动过
      * （改动过调用方需要刷新界面）。
      */
     fun apply(context: Context): Boolean {
+        // 只有「自动」或「跟随系统」开启时才由这里接管；两个都关时，夜间与否完全交给
+        // 阅读主题本身，避免用户手动切回日间后被反复拽回炫酷黑。
+        if (!auto(context) && !followSystem(context)) return false
         val night = isNight(context)
         val current = ReaderPrefs.theme(context)
         val isDark = ReaderPrefs.palette(current).dark
         if (night) {
-            val skinChanged = syncNightSkin(context)
             val target = nightTheme(context)
-            if (current != target) {
-                ReaderPrefs.setTheme(context, target)
+            val themeChanged = current != target
+            if (themeChanged) ReaderPrefs.setTheme(context, target)
+            // 皮肤还没到炫酷黑就一并修（皮肤切换必须走 SkinSync，它负责记录进夜间前的主题）
+            if (themeChanged || !SkinStore.load(context).isCoolBlack) {
                 SkinSync.onReaderTheme(context, true)
                 return true
             }
-            return skinChanged
+            return false
         }
         if (isDark) {
             ReaderPrefs.setTheme(context, ReaderPrefs.dayTheme(context))
@@ -100,13 +97,12 @@ internal object NightMode {
         return false
     }
 
-    /** 深灰/纯黑切换后，夜间默认皮肤要跟着换底色。只换「夜间默认色」，不覆盖用户自选深色。 */
-    private fun syncNightSkin(context: Context): Boolean {
-        val target = if (pureBlack(context)) Skin.NIGHT_BLACK else Skin.INK_BLACK
-        val skin = SkinStore.load(context)
-        if (skin.kind != SkinKind.COLOR || !skin.isCoolBlack || skin.color == target) return false
-        SkinStore.save(context, Skin(SkinKind.COLOR, target, dark = true))
-        return true
+
+    /** 手动退出夜间：恢复日间主题与进夜间前的主题皮肤。 */
+    fun exitNight(context: Context) {
+        if (!ReaderPrefs.palette(ReaderPrefs.theme(context)).dark) return
+        ReaderPrefs.setTheme(context, ReaderPrefs.dayTheme(context))
+        SkinSync.onReaderTheme(context, false)
     }
 
     /** 设置页右侧的状态文案。 */
