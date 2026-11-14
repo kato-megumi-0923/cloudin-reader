@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -106,6 +108,10 @@ internal fun Context.selectableItemBackground(): Drawable? {
 /**
  * 单选弹窗：玻璃卡片 + 选项列表，点选项即生效、点卡片外关闭。
  *
+ * [accessory] 给每行右侧加一个附属视图（比如心形），返回 null 表示不要；
+ * [onRowTap] 在点击瞬间回调，用来就地播预览动效；
+ * [closeOnPick] 传 false 时点选不关闭，可以连续试几个再点外面关掉。
+ *
  * 注意 [backdrop] 必须是整页根视图 —— 指向页面内部的背景层会让 AGSL 在 RenderThread
  * 里崩溃（SIGSEGV）。
  */
@@ -115,6 +121,12 @@ internal fun Context.showSettingChoice(
     title: String,
     labels: List<String>,
     selected: Int,
+    message: String? = null,
+    accessory: ((Int) -> View?)? = null,
+    onRowTap: ((Int, View) -> Unit)? = null,
+    closeOnPick: Boolean = true,
+    /** 行尾已经能表示选中（比如变红的心）时关掉文字上的 √，免得重复。 */
+    showCheck: Boolean = true,
     onPick: (Int) -> Unit
 ) {
     val dialog = ComponentDialog(this)
@@ -123,16 +135,40 @@ internal fun Context.showSettingChoice(
         text = title
         setTextColor(SkinTheme.title(dark))
     }
+    if (message != null) {
+        content.findViewById<TextView>(R.id.cardMessage).apply {
+            text = message
+            visibility = View.VISIBLE
+            setTextColor(SkinTheme.soft(dark))
+        }
+    }
     val rows = content.findViewById<LinearLayout>(R.id.cardRows)
     val ink = SkinTheme.title(dark)
+    val rowTexts = ArrayList<TextView>(labels.size)
+
+    fun renderCheck(index: Int) {
+        if (!showCheck) return
+        rowTexts.forEachIndexed { i, tv ->
+            tv.text = if (i == index) getString(R.string.checked_choice_label, labels[i]) else labels[i]
+        }
+    }
+
     labels.forEachIndexed { index, label ->
         val row = android.view.LayoutInflater.from(this).inflate(R.layout.row_dialog_action, rows, false)
-        row.findViewById<TextView>(R.id.cardRowText).apply {
-            text = if (index == selected) getString(R.string.checked_choice_label, label) else label
+        val tv = row.findViewById<TextView>(R.id.cardRowText).apply {
+            text = if (showCheck && index == selected) getString(R.string.checked_choice_label, label) else label
             setTextColor(ink)
         }
+        rowTexts.add(tv)
+        accessory?.invoke(index)?.let { extra ->
+            (row as? android.view.ViewGroup)?.addView(extra)
+        }
         row.setOnClickListener {
-            dialog.dismiss()
+            renderCheck(index)
+            onRowTap?.invoke(index, row)
+            if (closeOnPick) {
+                dialog.dismiss()
+            }
             onPick(index)
         }
         rows.addView(row)
@@ -145,7 +181,7 @@ internal fun Context.showSettingChoice(
         setColor(0x2EFFFFFF)
     }
     val skin = SkinStore.load(this)
-    val glass = AgslGlassView(this).apply {
+    val glass = GlassView(this).apply {
         cornerRadius = readerDp(26).toFloat()
         blurRadius = readerDp(11).toFloat()
         tintColor = if (skin.pale) 0xFFDDE4ED.toInt() else Color.WHITE

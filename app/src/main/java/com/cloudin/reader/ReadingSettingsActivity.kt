@@ -58,11 +58,9 @@ class ReadingSettingsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 皮肤换了由 BaseActivity 整页重建，这里避免再用旧配色刷一遍
+        if (skinReloading) return
         if (!::list.isInitialized) return
-        if (SkinStore.load(this).dark != dark) {
-            recreate()
-            return
-        }
         rebuild()
     }
 

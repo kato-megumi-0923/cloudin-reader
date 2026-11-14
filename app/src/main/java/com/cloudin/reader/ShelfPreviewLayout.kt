@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -156,7 +158,7 @@ internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
         glassRequested = true
         backdrop = source
         navHost.removeAllViews()
-        val glass = AgslGlassView(context).apply {
+        val glass = GlassView(context).apply {
             cornerRadius = dp(17).toFloat()
             blurRadius = dp(9).toFloat()
             tintColor = Color.WHITE

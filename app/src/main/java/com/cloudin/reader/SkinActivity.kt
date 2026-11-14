@@ -333,26 +333,33 @@ class SkinActivity : BaseActivity() {
         })
 
         val available = contentWidth() - readerDp(48)
-        val row = LinearLayout(this).apply {
+        val gap = readerDp(14)
+        fun addRow(): LinearLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_HORIZONTAL
+            column.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = readerDp(20) })
         }
-        column.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = readerDp(20) })
 
         if (tab == Tab.CLASSIC) {
-            val gap = readerDp(14)
-            val cardWidth = minOf(readerDp(300), (available - gap * 2) / 3)
-            Skin.PRESETS.forEachIndexed { index, skin ->
-                row.addView(presetCard(skin, cardWidth), LinearLayout.LayoutParams(cardWidth, -2).apply {
-                    if (index > 0) marginStart = gap
-                })
+            // 卡片数会变（现在是 4 张）：宽屏一行铺开，窄屏自动折行，最窄不小于 150dp
+            val count = Skin.PRESETS.size
+            val perRow = (available / readerDp(150)).coerceIn(1, count)
+            val cardWidth = minOf(readerDp(300), (available - gap * (perRow - 1)) / perRow)
+            Skin.PRESETS.chunked(perRow).forEach { chunk ->
+                val line = addRow()
+                chunk.forEachIndexed { index, skin ->
+                    line.addView(presetCard(skin, cardWidth), LinearLayout.LayoutParams(cardWidth, -2).apply {
+                        if (index > 0) marginStart = gap
+                    })
+                }
             }
         } else {
-            val gap = readerDp(16)
-            val cardWidth = minOf(readerDp(300), (available - gap) / 2)
-            row.addView(customColorCard(cardWidth), LinearLayout.LayoutParams(cardWidth, -2))
-            row.addView(customPhotoCard(cardWidth), LinearLayout.LayoutParams(cardWidth, -2).apply {
-                marginStart = gap
+            val row = addRow()
+            val customGap = readerDp(16)
+            val customWidth = minOf(readerDp(300), (available - customGap) / 2)
+            row.addView(customColorCard(customWidth), LinearLayout.LayoutParams(customWidth, -2))
+            row.addView(customPhotoCard(customWidth), LinearLayout.LayoutParams(customWidth, -2).apply {
+                marginStart = customGap
             })
         }
 

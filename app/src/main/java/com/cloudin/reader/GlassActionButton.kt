@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -19,7 +21,7 @@ class GlassActionButton @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
-) : AgslGlassView(context, attrs, defStyleAttr) {
+) : GlassView(context, attrs, defStyleAttr) {
 
     // Refraction and blur sample beyond the button outline.
     override val backdropPaddingPx: Int get() = dp(20)

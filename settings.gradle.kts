@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "cloudin-reader"
 include(":app")
+
+include(":refract")

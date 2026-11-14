@@ -12,8 +12,8 @@ android {
         applicationId = "com.cloudin.reader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 126
-        versionName = "0.2.22"
+        versionCode = 127
+        versionName = "0.2.23"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -40,4 +40,5 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.0")
     implementation("com.google.android.material:material:1.11.0")
     implementation("com.github.QWEA0:liquidglass:v2.0.11")
+    implementation(project(":refract"))
 }

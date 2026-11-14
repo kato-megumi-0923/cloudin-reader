@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -49,7 +51,7 @@ internal fun Context.readerSegments(
         background = readerPill(trackColor ?: if (dark) 0x20FFFFFF else 0x1E473315)
         setPadding(readerDp(2), readerDp(2), readerDp(2), readerDp(2))
     }
-    val lens = AgslGlassView(this).apply {
+    val lens = GlassView(this).apply {
         useControlOptics(24f)
         usePopupOptics()
         tintColor = if (dark) 0xFF777777.toInt() else Color.WHITE

@@ -1,4 +1,4 @@
-package com.cloudin.reader
+package com.cloudin.refract
 
 import android.graphics.RuntimeShader
 import android.os.Build

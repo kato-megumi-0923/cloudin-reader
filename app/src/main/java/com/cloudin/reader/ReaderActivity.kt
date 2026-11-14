@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.app.Dialog
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -65,7 +67,7 @@ class ReaderActivity : BaseActivity() {
     private var searchNavBar: View? = null
     private var searchLabel: TextView? = null
     private var searchCounter: TextView? = null
-    private lateinit var settingsPanel: AgslGlassView
+    private lateinit var settingsPanel: GlassView
     private var panelSection: Panel? = null
     private var panelHeightAnimator: ValueAnimator? = null
     private lateinit var progressControls: View
@@ -180,7 +182,7 @@ class ReaderActivity : BaseActivity() {
             R.id.bottomBar to 27f,
             R.id.settingsPanel to 24f
         ).forEach { (id, radiusDp) ->
-            findViewById<AgslGlassView>(id).apply {
+            findViewById<GlassView>(id).apply {
                 backdropSource = pageView
                 useControlOptics(radiusDp)
                 tintColor = ReaderPrefs.background(theme)
@@ -271,7 +273,7 @@ class ReaderActivity : BaseActivity() {
         loading.setTextColor(soft)
         findViewById<View>(R.id.root).setBackgroundColor(ReaderPrefs.background(theme))
         listOf(R.id.topBar, R.id.backBar, R.id.bottomBar, R.id.settingsPanel).forEach { id ->
-            findViewById<AgslGlassView>(id).tintColor = ReaderPrefs.chrome(theme)
+            findViewById<GlassView>(id).tintColor = ReaderPrefs.chrome(theme)
         }
         settingsPanel.tintAlpha = if (dark) 0.62f else 0.48f
         val toolbar = findViewById<ViewGroup>(R.id.bottomBar)
@@ -400,7 +402,8 @@ class ReaderActivity : BaseActivity() {
                 addView(settingCheck(getString(R.string.reader_volume_turns), ReaderPrefs.volumeTurns(this@ReaderActivity)) {
                     ReaderPrefs.setVolumeTurns(this@ReaderActivity, it)
                 }, rowParams())
-                addView(panelButton(getString(R.string.reader_submenu_label, getString(R.string.reader_progress)), R.id.readerSettingProgress) { showSettings(Panel.PROGRESS) }, rowParams())
+                // 「阅读进度」不放这里：底栏本来就有「进度」标签，这里再放一份是重复入口。
+                // 这一层留给后续的低频开关（比如「阅读时锁屏」）。
             }
         }
         settingsPanel.removeAllViews()
@@ -739,7 +742,7 @@ class ReaderActivity : BaseActivity() {
             chapterScroll.layoutParams.height = maxListHeight
         }
 
-        val glass = AgslGlassView(this).apply {
+        val glass = GlassView(this).apply {
             useControlOptics(26f)
             usePopupOptics()
             backdropSource = pageView
@@ -1081,7 +1084,7 @@ class ReaderActivity : BaseActivity() {
     /** 把内容包进玻璃卡片弹出；anchorTopEnd 时贴在右上角，否则居中。 */
     private fun showGlassPanel(content: View, widthDp: Int = 345, anchorTopEnd: Boolean = false): Dialog {
         val dialog = Dialog(this)
-        val glass = AgslGlassView(this).apply {
+        val glass = GlassView(this).apply {
             useControlOptics(26f)
             usePopupOptics()
             backdropSource = pageView
@@ -1645,7 +1648,7 @@ class ReaderActivity : BaseActivity() {
             val bottomInsetPx = rootInsets?.getInsets(WindowInsetsCompat.Type.systemBars())?.bottom ?: 0
 
             // 顶栏：真玻璃容器（和阅读底栏同一套 AGSL 材质），文字绝对居中
-            val topGlass = AgslGlassView(this).apply {
+            val topGlass = GlassView(this).apply {
                 useControlOptics(20f)
                 tintColor = ReaderPrefs.chrome(theme)
                 backdropSource = pageView
@@ -1706,7 +1709,7 @@ class ReaderActivity : BaseActivity() {
             searchTopChip = topGlass
 
             // 底栏：真玻璃容器，三段等分
-            val navGlass = AgslGlassView(this).apply {
+            val navGlass = GlassView(this).apply {
                 useControlOptics(20f)
                 tintColor = ReaderPrefs.chrome(theme)
                 backdropSource = pageView
@@ -1751,7 +1754,7 @@ class ReaderActivity : BaseActivity() {
         val soft = ReaderPrefs.softInk(theme)
         val frosted = GlassStyle.load(this) == GlassStyle.FROSTED
         listOfNotNull(searchTopChip, searchNavBar).forEach { bar ->
-            (bar as? AgslGlassView)?.apply {
+            (bar as? GlassView)?.apply {
                 tintColor = ReaderPrefs.chrome(theme)
                 backdropSource = pageView
                 this.frosted = frosted
@@ -1814,8 +1817,9 @@ class ReaderActivity : BaseActivity() {
     private fun changeTheme(value: Int) {
         ReaderPrefs.setTheme(this, value)
         applyTheme(value)
-        // 夜间模式与书架皮肤联动：夜间用炫酷黑，切回日间还原进夜间前的皮肤
-        SkinSync.onReaderTheme(this, ReaderPrefs.palette(value).dark)
+        // 夜间模式与书架皮肤联动：夜间用夜间蓝，切回日间还原进夜间前的皮肤。
+        // manual = true：这是用户在阅读页手动切的，快照要延续到书架，不被 NightMode 自动收回。
+        SkinSync.onReaderTheme(this, ReaderPrefs.palette(value).dark, manual = true)
     }
 
     private fun applyTheme(value: Int) {

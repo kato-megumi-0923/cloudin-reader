@@ -1,4 +1,4 @@
-package com.cloudin.reader
+package com.cloudin.refract
 
 import android.content.Context
 import android.graphics.Canvas
@@ -23,7 +23,7 @@ import androidx.annotation.RequiresApi
  * 着色器来自 AndroidLiquidGlassView（MIT，QmDeve），算法参考 IT之家 的改版。
  * Android 13 以下退化为半透明圆角色块。
  */
-open class AgslGlassView @JvmOverloads constructor(
+open class GlassView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
@@ -41,13 +41,13 @@ open class AgslGlassView @JvmOverloads constructor(
     var dispersion: Float = 0.14f
         set(value) { field = value; needsUpdate = true; invalidate() }
 
-    private var edgeHighlight: Float = 1.1f
+    var edgeHighlight: Float = 1.1f
         set(value) { field = value; needsUpdate = true; invalidate() }
 
     var blurRadius: Float = dp(6f)
         set(value) { field = value; blurEffect = null; needsUpdate = true; invalidate() }
 
-    internal var frosted = false
+    var frosted = false
         set(value) {
             if (field == value) return
             field = value
@@ -62,7 +62,7 @@ open class AgslGlassView @JvmOverloads constructor(
     var tintAlpha: Float = 0.10f
         set(value) { field = value; needsUpdate = true; invalidate() }
 
-    internal fun useControlOptics(radiusDp: Float) {
+    fun useControlOptics(radiusDp: Float) {
         cornerRadius = dp(radiusDp)
         refractionHeight = dp(7f)
         refractionAmount = dp(9f)
@@ -70,7 +70,7 @@ open class AgslGlassView @JvmOverloads constructor(
         tintAlpha = 0.24f
     }
 
-    internal fun usePopupOptics() {
+    fun usePopupOptics() {
         refractionHeight = dp(3f)
         refractionAmount = dp(2f)
         edgeHighlight = 0f
@@ -93,8 +93,9 @@ open class AgslGlassView @JvmOverloads constructor(
     private var blurEffect: RenderEffect? = null
     private var effectAttached = false
     private var recording = false
+    private var captureBlocked = false
     private var supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    internal val isShaderSupported: Boolean get() = supported
+    val isShaderSupported: Boolean get() = supported
 
     private val preDraw = ViewTreeObserver.OnPreDrawListener {
         if (supported && isShown) {
@@ -135,7 +136,8 @@ open class AgslGlassView @JvmOverloads constructor(
 
     override fun dispatchDraw(canvas: Canvas) {
         val n = node
-        if (supported && canvas.isHardwareAccelerated && n != null) {
+        // captureBlocked：没有安全背景源时只画半透明底色，绝不画可能把自己采进去的 node
+        if (!captureBlocked && supported && canvas.isHardwareAccelerated && n != null) {
             canvas.drawRenderNode(n)
         } else {
             drawFallback(canvas)
@@ -151,9 +153,17 @@ open class AgslGlassView @JvmOverloads constructor(
     }
 
     private fun record() {
-        // 录制目标里可能包含自己（比如底栏透镜在 root 里），避免递归
+        // recording 只挡重入；真正的递归风险是「背景源包含自己」
         if (recording) return
-        val target = backdropSource ?: (parent as? View) ?: return
+        val target = backdropSource ?: (parent as? View)
+        // 没设背景源、或背景源是自己的祖先（父容器通常就包含玻璃自身）时不要录：
+        // 画面里会把自己的 RenderNode 叠进去，轻则错位，重则递归爆栈。
+        // 这种情况下退回半透明底色，行为可预期。
+        if (target == null || containsSelf(target)) {
+            captureBlocked = true
+            return
+        }
+        captureBlocked = false
         val w = width
         val h = height
         if (w <= 0 || h <= 0 || target.width <= 0 || target.height <= 0) return
@@ -176,6 +186,16 @@ open class AgslGlassView @JvmOverloads constructor(
         }
     }
 
+    /** target 是否是自己的祖先（含自己）：这种背景源一录就会把自己画进去。 */
+    private fun containsSelf(target: View): Boolean {
+        var node: View? = this
+        while (node != null) {
+            if (node === target) return true
+            node = node.parent as? View
+        }
+        return false
+    }
+
     private fun applyEffect() {
         val s = shader ?: return
         val n = node ?: return
@@ -192,7 +212,7 @@ open class AgslGlassView @JvmOverloads constructor(
             s.setFloatUniform("refractionHeight", if (frosted) 0f else refractionHeight)
             s.setFloatUniform("refractionAmount", if (frosted) 0f else refractionAmount)
             s.setFloatUniform("refractionAxis", floatArrayOf(1f, 0.72f))
-            s.setFloatUniform("isDark", if (androidx.core.graphics.ColorUtils.calculateLuminance(tintColor) < 0.22) 1f else 0f)
+            s.setFloatUniform("isDark", if (luminanceOf(tintColor) < 0.22f) 1f else 0f)
             s.setFloatUniform("lr", 0.5f)
             s.setFloatUniform("ld", 0.10f)
             s.setFloatUniform("dr", 0.55f)
@@ -231,4 +251,20 @@ open class AgslGlassView @JvmOverloads constructor(
         context.resources.openRawResource(R.raw.agsl_glass).bufferedReader().use { it.readText() }
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
+
+    /**
+     * 相对亮度：先把每个通道做 sRGB 线性化再加权，和（拆分前）ColorUtils.calculateLuminance 一致。
+     * 不能直接用 gamma 后的加权平均——同一个 #757575 会从深色分支跳到浅色分支，玻璃的高光/阴影方向就会反。
+     */
+    private fun luminanceOf(color: Int): Float {
+        fun channel(value: Int): Double {
+            val v = value / 255.0
+            return if (v <= 0.04045) v / 12.92 else Math.pow((v + 0.055) / 1.055, 2.4)
+        }
+        return (
+            0.2126 * channel(Color.red(color)) +
+                0.7152 * channel(Color.green(color)) +
+                0.0722 * channel(Color.blue(color))
+            ).toFloat()
+    }
 }

@@ -27,8 +27,9 @@ object ReaderPrefs {
     val themes = listOf(
         Theme(THEME_PAPER, R.string.reader_theme_paper, 0xFFC9B282.toInt(), 0xFF302303.toInt(), 0xFFCCB992.toInt(), R.drawable.reader_texture_kraft),
         Theme(THEME_WHITE, R.string.reader_theme_white, 0xFFF6F6F6.toInt(), 0xFF262626.toInt(), Color.WHITE, R.drawable.reader_texture_white),
-        Theme(THEME_NIGHT, R.string.reader_theme_night, 0xFF1A1A1A.toInt(), 0xFFDDDDDD.toInt(), 0xFF262626.toInt(), dark = true),
-        Theme(THEME_BLACK, R.string.reader_theme_black, Color.BLACK, 0xFFCCCCCC.toInt(), 0xFF1A1A1A.toInt(), dark = true),
+        // 夜间偏冷蓝灰、雅黑是纯黑高对比：两者原来只差 10% 亮度，缩略图里几乎分不出来
+        Theme(THEME_NIGHT, R.string.reader_theme_night, 0xFF171A21.toInt(), 0xFFC6CDD8.toInt(), 0xFF212630.toInt(), dark = true),
+        Theme(THEME_BLACK, R.string.reader_theme_black, Color.BLACK, 0xFFE6E6E6.toInt(), 0xFF141414.toInt(), dark = true),
         Theme(THEME_GREEN, R.string.reader_theme_green, 0xFFD2E4D2.toInt(), 0xFF132013.toInt(), 0xFFE4EFE4.toInt()),
         Theme(THEME_WOOD, R.string.reader_theme_wood, 0xFFD2A679.toInt(), 0xFF302303.toInt(), 0xFFD5B890.toInt(), R.drawable.reader_texture_wood),
         Theme(THEME_PLUM, R.string.reader_theme_plum, 0xFFFFE4E1.toInt(), 0xFF330500.toInt(), 0xFFFFF1F0.toInt()),

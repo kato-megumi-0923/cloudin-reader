@@ -105,6 +105,20 @@ class BookshelfAdapter(
      * 只更勾选状态，不动封面本身。
      * 这里用 payload 通知：整表刷新会让每个 BookCoverView 重新测量/取图，肉眼就是闪一下。
      */
+    /** 只刷一条（收藏、置顶这类单本变化），避免整表 notifyDataSetChanged 造成全屏闪一下。 */
+    fun notifyFavoriteChanged(bookId: String) {
+        val index = items.indexOfFirst { it.id == bookId }
+        if (index >= 0) notifyItemChanged(folders.size + index)
+    }
+
+    fun removeBook(bookId: String): Boolean {
+        val index = items.indexOfFirst { it.id == bookId }
+        if (index < 0) return false
+        items.removeAt(index)
+        notifyItemRemoved(folders.size + index)
+        return true
+    }
+
     private fun notifySelectionOnly() {
         if (itemCount > 0) notifyItemRangeChanged(0, itemCount, SelectionChange)
     }
@@ -142,7 +156,8 @@ class BookshelfAdapter(
             2 -> R.layout.item_book_list
             else -> R.layout.item_book
         }
-        return Holder(LayoutInflater.from(parent.context).inflate(res, parent, false))
+        // 网格里的心画在封面上，列表里的心画在行背景上，着色规则不同
+        return Holder(LayoutInflater.from(parent.context).inflate(res, parent, false), heartOverCover = res == R.layout.item_book)
     }
 
     override fun getItemCount(): Int = folders.size + items.size
@@ -161,7 +176,7 @@ class BookshelfAdapter(
         } else onBindViewHolder(holder, position)
     }
 
-    inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
+    inner class Holder(view: View, private val heartOverCover: Boolean) : RecyclerView.ViewHolder(view) {
         private val cover: BookCoverView? = view.findViewById(R.id.cover)
         private val folderCard: FolderCardView? = view.findViewById(R.id.folderCard)
         private val folderName: TextView? = view.findViewById(R.id.folderName)
@@ -202,13 +217,25 @@ class BookshelfAdapter(
 
             pinBadge?.visibility = if (book.pinned) View.VISIBLE else View.GONE
             heart?.setImageResource(if (book.favorite) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline)
-            heart?.setOnClickListener { onFavorite(book) }
+            heart?.setOnClickListener { view ->
+                // 动效先起，再走保存 —— 点下去立刻有反馈，写盘慢也不影响手感
+                HeartFx.play(
+                    HeartFx.activityOf(view.context),
+                    view,
+                    LikeAnim.load(view.context),
+                    !book.favorite
+                )
+                onFavorite(book)
+            }
             fun updateIconColors(lightCover: Boolean) {
+                // 置顶角标画在封面上，跟着封面亮暗走
                 pinBadge?.setImageResource(if (lightCover) R.drawable.ic_pin_badge_dark else R.drawable.ic_pin_badge_light)
                 heart?.setColorFilter(when {
                     book.favorite -> Color.parseColor("#FF4D5E")
-                    lightCover -> Color.parseColor("#3A3D45")
-                    else -> Color.WHITE
+                    // 网格：心压在封面上，按封面亮暗取色
+                    heartOverCover -> if (lightCover) Color.parseColor("#3A3D45") else Color.WHITE
+                    // 列表：心在行背景上，按皮肤取色（之前跟封面走，深封面会配出白心，浅书架上看不见）
+                    else -> SkinTheme.soft(skinDark)
                 })
             }
             updateIconColors(cover?.coverIsLight ?: true)

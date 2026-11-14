@@ -134,7 +134,7 @@ class BookCoverView @JvmOverloads constructor(
     }
 
     private fun requestThumbnail() {
-        if (!isAttachedToWindow || width <= 0 || height <= 0) return
+        if (width <= 0 || height <= 0) return
         val fileKey = (coverPath ?: artworkFile)?.let { CoverThumbnailLoader.key(it, width, height) }
         val key = when {
             fileKey != null && fileKey != failedFileKey -> fileKey
@@ -143,11 +143,14 @@ class BookCoverView @JvmOverloads constructor(
         }
         if (key == loadedKey || key == pendingKey) return
         cancelThumbnailRequest()
+        // 缓存命中要抢在「是否已挂到窗口」之前判断：切标签时整表重绑，那一帧还没 attach，
+        // 之前会先画占位渐变、下一帧才贴上缓存，看起来就是封面闪一下。
         val cached = CoverThumbnailLoader.cached(key)
         if (cached != null) {
             applyThumbnail(key, cached)
             return
         }
+        if (!isAttachedToWindow) return
         pendingKey = key
         val generation = requestGeneration
         val callback: (CoverThumbnailLoader.Result) -> Unit = { result ->

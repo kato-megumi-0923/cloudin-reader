@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.LiquidGlass
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapShader

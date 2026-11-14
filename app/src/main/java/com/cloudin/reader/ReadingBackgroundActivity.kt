@@ -113,7 +113,8 @@ class ReadingBackgroundActivity : BaseActivity() {
                 val previous = ReaderPrefs.theme(this@ReadingBackgroundActivity)
                 if (previous != palette.id) {
                     ReaderPrefs.setTheme(this@ReadingBackgroundActivity, palette.id)
-                    SkinSync.onReaderTheme(this@ReadingBackgroundActivity, palette.dark)
+                    // 这里也是用户手动选的深色，快照要延续到书架，别被 NightMode 自动还原
+                    SkinSync.onReaderTheme(this@ReadingBackgroundActivity, palette.dark, manual = true)
                     setResult(RESULT_OK)
                     val previousPosition = ReaderPrefs.themes.indexOfFirst { it.id == previous }
                     if (previousPosition >= 0) notifyItemChanged(previousPosition)

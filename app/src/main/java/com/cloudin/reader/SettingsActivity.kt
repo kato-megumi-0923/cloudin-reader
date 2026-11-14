@@ -1,11 +1,14 @@
 package com.cloudin.reader
 
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.core.view.ViewCompat
@@ -61,12 +64,9 @@ class SettingsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 皮肤换了的话 BaseActivity 已经安排整页重建，这里别再拿旧配色刷一遍
+        if (skinReloading) return
         if (!::list.isInitialized) return
-        // 明暗变了说明期间皮肤换过，背景与标题是旧配色，整页重建才不会混搭
-        if (SkinStore.load(this).dark != dark) {
-            recreate()
-            return
-        }
         // 从子页面回来时右侧的值可能已经变了
         rebuild()
     }
@@ -88,6 +88,7 @@ class SettingsActivity : BaseActivity() {
             open(DefaultCoverActivity::class.java)
         }
         card.addSettingRow(dark, "书架布局", layoutName()) { pickLayout() }
+        card.addSettingRow(dark, "喜欢动画", LikeAnim.load(this).label) { pickLikeAnim() }
         card.addSettingRow(
             dark, getString(R.string.profile_glass_style),
             getString(GlassStyle.load(this).label)
@@ -114,6 +115,56 @@ class SettingsActivity : BaseActivity() {
         }
     }
 
+    /**
+     * 三档动效挑一个。每行右侧放一颗心，点行先在这颗心上把对应动效演一遍再落盘，
+     * 否则光看名字「心爱 / 心动 / 心碎」没人知道长什么样。
+     * 弹窗不自动关，可以连着把三个都点一遍，点外面收起。
+     */
+    private fun pickLikeAnim() {
+        val anims = LikeAnim.entries
+        val current = LikeAnim.load(this)
+        val hearts = ArrayList<ImageView>(anims.size)
+        var selected = current.ordinal
+
+        fun paint(heart: ImageView, on: Boolean) {
+            heart.setImageResource(if (on) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline)
+            heart.imageTintList = ColorStateList.valueOf(
+                if (on) favoriteRed else SkinTheme.soft(dark)
+            )
+        }
+
+        showSettingChoice(
+            dark, pageRoot, "喜欢动画",
+            anims.map { it.label }, current.ordinal,
+            closeOnPick = false,
+            showCheck = false,
+            accessory = { index ->
+                ImageView(this).apply {
+                    val side = readerDp(21)
+                    layoutParams = LinearLayout.LayoutParams(side, side).apply {
+                        marginStart = readerDp(10)
+                    }
+                    paint(this, index == current.ordinal)
+                    hearts.add(this)
+                }
+            },
+            onRowTap = { index, row ->
+                val prev = selected
+                selected = index
+                // 换到另一档时，原来那颗心也要按它自己的档位演一遍「取消喜欢」
+                if (prev != index) {
+                    paint(hearts[prev], false)
+                    HeartFx.play(row.rootView as? ViewGroup, hearts[prev], anims[prev], false)
+                }
+                hearts.forEachIndexed { i, heart -> if (i != prev) paint(heart, i == index) }
+                HeartFx.play(row.rootView as? ViewGroup, hearts[index], anims[index], true)
+            }
+        ) { index ->
+            anims[index].save(this)
+            rebuild()
+        }
+    }
+
     private fun pickGlass() {
         val styles = GlassStyle.entries
         showSettingChoice(
@@ -130,4 +181,6 @@ class SettingsActivity : BaseActivity() {
     private companion object {
         const val KEY_LAYOUT = "shelf_layout"
     }
+
+    private val favoriteRed = 0xFFFF4D5E.toInt()
 }

@@ -41,9 +41,17 @@ abstract class BaseActivity : AppCompatActivity() {
     }
     private var skinReceiverRegistered = false
 
+    /** 上一次铺开的皮肤：从子页面（比如主题预览）返回时据此判断整页配色是否已经过期。 */
+    private var appliedSkin: Skin? = null
+
+    /** 本次 onResume 已经决定整页重建，子类不要再拿旧配色 rebuild 一遍。 */
+    protected var skinReloading: Boolean = false
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.useAuroraSystemBars()
+        appliedSkin = SkinStore.load(this)
     }
 
     override fun onStart() {
@@ -67,6 +75,20 @@ abstract class BaseActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        skinReloading = false
+        if (reloadsOnSkinChange) {
+            val current = SkinStore.load(this)
+            // 只比 dark 不够：极光 ↔ 纯净白、夜间 ↔ 炫酷黑这种同明暗换肤，
+            // dark 没变但背景、标题、卡片取的都是旧色，整页得重建。
+            // 广播在 onStop 时已经注销，从子页面返回这一路只能靠这里兜住。
+            if (appliedSkin != null && current != appliedSkin) {
+                appliedSkin = current
+                skinReloading = true
+                recreate()
+                return
+            }
+            appliedSkin = current
+        }
         window.syncSystemBarIconTone(systemBarDark)
     }
 }

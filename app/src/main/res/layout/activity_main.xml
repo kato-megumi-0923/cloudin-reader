@@ -136,7 +136,7 @@
         android:focusable="true"
         android:visibility="gone" />
 
-    <com.cloudin.reader.AgslGlassView
+    <com.cloudin.refract.GlassView
         android:id="@+id/menuPanel"
         android:layout_width="128dp"
         android:layout_height="wrap_content"
@@ -151,7 +151,7 @@
             android:orientation="vertical"
             android:paddingTop="8dp"
             android:paddingBottom="8dp" />
-    </com.cloudin.reader.AgslGlassView>
+    </com.cloudin.refract.GlassView>
 
 
     <com.cloudin.reader.ShelfTabBar
@@ -159,7 +159,7 @@
         android:layout_width="304dp"
         android:layout_height="104dp"
         android:layout_gravity="bottom|center_horizontal" />
-    <com.cloudin.reader.AgslGlassView
+    <com.cloudin.refract.GlassView
         android:id="@+id/actionSheet"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -211,6 +211,6 @@
                 android:text="移出书架"
                 android:textSize="13sp" />
         </LinearLayout>
-    </com.cloudin.reader.AgslGlassView>
+    </com.cloudin.refract.GlassView>
 
 </FrameLayout>

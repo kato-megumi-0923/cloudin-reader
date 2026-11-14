@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -31,7 +33,8 @@ internal data class Skin(
             SkinKind.PHOTO -> "背景自定义"
             SkinKind.COLOR -> when (color) {
                 WHITE -> "纯净白"
-                INK_BLACK -> "炫酷黑"
+                INK_BLACK, LEGACY_INK_BLACK -> "炫酷黑"
+                NIGHT_DARK -> "夜间"
                 else -> "自选色"
             }
         }
@@ -41,14 +44,22 @@ internal data class Skin(
 
     companion object {
         const val WHITE = 0xFFFFFFFF.toInt()
-        const val INK_BLACK = 0xFF1A1D24.toInt()
+        /** 炫酷黑：改成和阅读背景「雅黑」一致的纯黑（原来 #1A1D24 和「夜间」太接近）。 */
+        const val INK_BLACK = 0xFF000000.toInt()
+
+        /** 旧版炫酷黑的取色，只用于让老存档还能显示成「炫酷黑」而不是「自选色」。 */
+        private const val LEGACY_INK_BLACK = 0xFF1A1D24.toInt()
 
         val AURORA = Skin(SkinKind.AURORA)
         val PURE_WHITE = Skin(SkinKind.COLOR, WHITE)
         val COOL_BLACK = Skin(SkinKind.COLOR, INK_BLACK, dark = true)
 
+        /** 夜间模式专用的书架深色：比炫酷黑更暗、更偏蓝，和阅读层「夜间」同一色系。 */
+        const val NIGHT_DARK = 0xFF141A29.toInt()
+        val NIGHT = Skin(SkinKind.COLOR, NIGHT_DARK, dark = true)
+
         /** 「经典」分类里的三个预设，顺序即展示顺序。 */
-        val PRESETS = listOf(AURORA, PURE_WHITE, COOL_BLACK)
+        val PRESETS = listOf(AURORA, PURE_WHITE, NIGHT, COOL_BLACK)
 
         /** 相对亮度低于该值就按深色皮肤处理，与设计稿的 0.26 阈值一致。 */
         fun isDarkColor(color: Int): Boolean = luminance(color) < 0.26
@@ -250,31 +261,54 @@ internal object SkinSync {
     private const val PREFS = "appearance"
     private const val KEY_BEFORE_NIGHT = "skin_before_night"
 
-    fun onReaderTheme(context: Context, dark: Boolean) {
-        if (dark) enterNight(context) else leaveNight(context)
+    /** 快照是否来自「阅读页手动点夜间」。这种要延续到书架，不能被 NightMode 自动还原。 */
+    private const val KEY_BEFORE_NIGHT_MANUAL = "skin_before_night_manual"
+
+    fun onReaderTheme(context: Context, dark: Boolean, manual: Boolean = false) {
+        if (dark) enterNight(context, manual) else leaveNight(context)
     }
+
+    /** 快照是不是用户手动切夜间留下的。 */
+    fun snapshotIsManual(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BEFORE_NIGHT_MANUAL, false)
 
     /** 手动换皮肤：清掉快照，避免之后切日间又被拽回旧皮肤。 */
     fun onManualSkinChange(context: Context) {
         prefs(context).edit().remove(KEY_BEFORE_NIGHT).apply()
     }
 
-    private fun enterNight(context: Context) {
+    private fun enterNight(context: Context, manual: Boolean) {
         val current = SkinStore.load(context)
-        if (current.isCoolBlack) return
+        if (current.isNightDark) return
         val p = prefs(context)
         if (p.getString(KEY_BEFORE_NIGHT, null) == null) {
-            p.edit().putString(KEY_BEFORE_NIGHT, encode(current)).apply()
+            // 记一次来源：手动切的要能延续到书架，自动切的（夜间模式）由 NightMode 自己收回
+            p.edit()
+                .putString(KEY_BEFORE_NIGHT, encode(current))
+                .putBoolean(KEY_BEFORE_NIGHT_MANUAL, manual)
+                .apply()
         }
-        SkinStore.save(context, Skin.COOL_BLACK)
+        SkinStore.save(context, Skin.NIGHT)
+    }
+
+    /**
+     * 退出夜间时把皮肤还原成进夜间前那张。没有快照（本来是手动选的炫酷黑）就什么都不做。
+     * 返回是否真的换了皮肤，调用方据此决定要不要刷新界面。
+     */
+    fun restoreNightSnapshot(context: Context): Boolean {
+        val p = prefs(context)
+        val stored = p.getString(KEY_BEFORE_NIGHT, null) ?: return false
+        val skin = decode(stored) ?: run {
+            p.edit().remove(KEY_BEFORE_NIGHT).remove(KEY_BEFORE_NIGHT_MANUAL).apply()
+            return false
+        }
+        p.edit().remove(KEY_BEFORE_NIGHT).remove(KEY_BEFORE_NIGHT_MANUAL).apply()
+        SkinStore.save(context, skin)
+        return true
     }
 
     private fun leaveNight(context: Context) {
-        val p = prefs(context)
-        // 没有快照说明本来就在炫酷黑，退出夜间时不动它
-        val stored = p.getString(KEY_BEFORE_NIGHT, null) ?: return
-        p.edit().remove(KEY_BEFORE_NIGHT).apply()
-        decode(stored)?.let { SkinStore.save(context, it) }
+        restoreNightSnapshot(context)
     }
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -299,9 +333,16 @@ internal object SkinSync {
     }.getOrNull()
 }
 
-/** 皮肤处理后的身份判断：炫酷黑 / 纯黑都算「夜间默认皮肤」。 */
-internal val Skin.isCoolBlack: Boolean
-    get() = kind == SkinKind.COLOR && color == Skin.INK_BLACK
+/**
+ * 是否是「夜间模式」专用的那张皮肤。
+ * 只认 NIGHT_DARK：手动选的炫酷黑要靠 enterNight 换成夜间蓝（换之前会存快照，退出夜间再还原），
+ * 否则夜间模式开着也还是原来那张偏中性的黑。
+ */
+internal val Skin.isNightDark: Boolean
+    get() = kind == SkinKind.COLOR && color == Skin.NIGHT_DARK
+
+@Deprecated("用 isNightDark", ReplaceWith("isNightDark"))
+internal val Skin.isCoolBlack: Boolean get() = isNightDark
 
 /**
  * 深色皮肤下的文字配色。只改写「本来就是书架浅色」的那几个色值，
@@ -312,6 +353,7 @@ internal object SkinTheme {
     private val TAG = R.id.skin_text_color_tag
     private val TAG_ICON = R.id.skin_icon_tint_tag
     private val TAG_GLASS = R.id.skin_glass_tint_tag
+    private val TAG_SKIP = R.id.skin_skip_tag
 
     private val light = intArrayOf(
         0xFF222222.toInt(), // shelf_title
@@ -345,7 +387,7 @@ internal object SkinTheme {
             root.setSkinPale(pale)
             return
         }
-        if (root is AgslGlassView) {
+        if (root is GlassView) {
             val radius = root.cornerRadius
             if (pale) {
                 // 第一次染色前把原值记下来：不还原的话，从近白皮肤切走之后
@@ -381,6 +423,31 @@ internal object SkinTheme {
     private fun dp(view: View, value: Int): Int =
         (value * view.resources.displayMetrics.density + 0.5f).toInt()
 
+    /**
+     * 找出颜色属于哪个语义槽位（0..5）。
+     *
+     * 两个表都查：这样即便某个 View 是在深色皮肤下创建的、当前值是深色版，
+     * 也能推回浅色槽位，切浅色时不会卡在近白色（白底上等于消失）。
+     */
+    private fun slotOf(color: Int): Int {
+        val lightSlot = light.indexOf(color)
+        if (lightSlot >= 0) return lightSlot
+        return darkColors.indexOf(color)
+    }
+
+    /**
+     * 标记这个 View 不参与皮肤换色。
+     *
+     * 换色是按「颜色值落在哪个语义槽位」判断的，不是按 View 身份：
+     * 只要 tint/textColor 等于表里的 6 个语义色之一，就会被一起翻转。
+     * 想让某个图标保持固定颜色（品牌色、图片本身带色等），调这个再自己设色。
+     */
+    fun ignoreSkin(view: View) {
+        view.setTag(TAG_SKIP, true)
+    }
+
+    fun isSkinIgnored(view: View): Boolean = view.getTag(TAG_SKIP) == true
+
     fun applyTo(root: View, dark: Boolean) {
         when (root) {
             is TextView -> recolor(root, dark)
@@ -398,22 +465,25 @@ internal object SkinTheme {
      * 在 light 表里找不到、直接跳过，图标会停在近白色——白底上等于消失。
      */
     private fun recolorIcon(view: android.widget.ImageView, dark: Boolean) {
+        if (isSkinIgnored(view)) return
         val stored = view.getTag(TAG_ICON) as? Int
         val base = stored ?: view.imageTintList?.defaultColor ?: return
-        val slot = light.indexOf(base)
+        val slot = slotOf(base)
         if (slot < 0) return
-        if (stored == null) view.setTag(TAG_ICON, base)
+        // tag 里统一存浅色基准值，切来切去都以它为准，不会一轮之后就找不到槽位
+        if (stored == null) view.setTag(TAG_ICON, light[slot])
         view.imageTintList = android.content.res.ColorStateList.valueOf(
             if (dark) darkColors[slot] else light[slot]
         )
     }
 
     fun recolor(view: TextView, dark: Boolean) {
+        if (isSkinIgnored(view)) return
         val stored = view.getTag(TAG) as? Int
         val base = stored ?: view.currentTextColor
-        val slot = light.indexOf(base)
+        val slot = slotOf(base)
         if (slot < 0) return
-        if (stored == null) view.setTag(TAG, base)
+        if (stored == null) view.setTag(TAG, light[slot])
         view.setTextColor(if (dark) darkColors[slot] else light[slot])
     }
 }

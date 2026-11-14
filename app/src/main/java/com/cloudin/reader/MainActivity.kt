@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
@@ -78,6 +80,9 @@ class MainActivity : BaseActivity() {
     private var wifiDestination: Uri? = null
     private var skinScrim: View? = null
     private var restoreAttempted = false
+
+    /** 上一次真正铺到界面上的皮肤：从阅读页返回时据此判断要不要重铺。 */
+    private var appliedSkin: Skin? = null
     private var libraryFailed = false
 
     /** 自动夜间的时间检查：每分钟一次，只在真切换时才刷新。 */
@@ -106,6 +111,7 @@ class MainActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 自动 / 跟随系统的夜间切换：先落到偏好，后面读到主题与主题皮肤就是最新状态
+        NightMode.ensureConfigCurrent(this)
         NightMode.apply(this)
         openedBookId = savedInstanceState?.getString("opened_book_id")
         setContentView(R.layout.activity_main)
@@ -171,7 +177,7 @@ class MainActivity : BaseActivity() {
                     textView.setPadding(horizontalPadding, 0, horizontalPadding, 0)
                 }
             }
-        findViewById<AgslGlassView>(R.id.actionSheet).apply {
+        findViewById<GlassView>(R.id.actionSheet).apply {
             useControlOptics(28f)
             backdropSource = root.findViewById(R.id.shelfBackdrop)
         }
@@ -179,10 +185,10 @@ class MainActivity : BaseActivity() {
             setBackdropSource(root.findViewById(R.id.shelfBackdrop))
             setTabs(
                 listOf(
-                    ShelfTabBar.Tab(getString(R.string.shelf), R.drawable.ic_tab_shelf),
-                    ShelfTabBar.Tab("分组", R.drawable.ic_tab_groups),
-                    ShelfTabBar.Tab("喜爱", R.drawable.ic_tab_fav),
-                    ShelfTabBar.Tab(getString(R.string.profile_tab), R.drawable.ic_tab_profile)
+                    ShelfTabBar.Tab(getString(R.string.shelf), R.drawable.ic_tab_shelf, R.drawable.ic_tab_shelf_filled),
+                    ShelfTabBar.Tab("分组", R.drawable.ic_tab_groups, R.drawable.ic_tab_groups_filled),
+                    ShelfTabBar.Tab("喜爱", R.drawable.ic_tab_fav, R.drawable.ic_tab_fav_filled),
+                    ShelfTabBar.Tab(getString(R.string.profile_tab), R.drawable.ic_tab_profile, R.drawable.ic_tab_profile_filled)
                 )
             )
             onTabSelected = { index -> switchTab(Tab.entries[index]) }
@@ -218,7 +224,9 @@ class MainActivity : BaseActivity() {
             textView.visibility = View.GONE
             val icon = android.widget.ImageView(this@MainActivity).apply {
                 setImageResource(R.drawable.ic_header_search)
-                setColorFilter(getColor(R.color.shelf_title))
+                // 必须用 imageTintList 而不是 setColorFilter：SkinTheme.applyTo 是靠 tint 识别并翻转颜色的，
+                // 走 colorFilter 的图标不在换色路径里，深色皮肤下会一直保持 #222222（黑）。
+                imageTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.shelf_title))
             }
             addView(icon, android.widget.FrameLayout.LayoutParams(dp(22), dp(22), android.view.Gravity.CENTER))
             setGlassClickListener { startActivity(SearchActivity.intent(this@MainActivity)) }
@@ -275,6 +283,10 @@ class MainActivity : BaseActivity() {
         // 自动 / 跟随系统可能在后台期间改变了夜间状态
         NightMode.apply(this)
         reload()
+        // 阅读页底栏的「夜间」也会联动书架皮肤（SkinSync），回来时必须重铺一次，
+        // 否则皮肤存档已经变了、界面还停在进来之前那张（比如书架还是极光）。
+        val storedSkin = SkinStore.load(this)
+        if (storedSkin != appliedSkin) applySkin()
         // 设置页可能改过书架布局与玻璃样式，回来时同步一次（applyTo 幂等）
         val storedLayout =
             if (prefs().getString("shelf_layout", "grid") == "list") ShelfLayout.LIST else ShelfLayout.GRID
@@ -565,6 +577,7 @@ class MainActivity : BaseActivity() {
     /** 皮肤铺到整页背景层，深色皮肤额外把文字与状态栏图标切成浅色。 */
     private fun applySkin() {
         val skin = SkinStore.load(this)
+        appliedSkin = skin
         val root = findViewById<View>(R.id.root)
         val backdrop = findViewById<View>(R.id.bgLayer)
         SkinStore.applyTo(this, backdrop, skin)
@@ -677,7 +690,7 @@ class MainActivity : BaseActivity() {
             setColor(0x2EFFFFFF)
         }
         val pale = SkinStore.load(this).pale
-        val glass = AgslGlassView(this).apply {
+        val glass = GlassView(this).apply {
             cornerRadius = dp(26).toFloat()
             blurRadius = dp(11).toFloat()
             tintColor = if (pale) 0xFFDDE4ED.toInt() else 0xFFFFFFFF.toInt()
@@ -936,8 +949,25 @@ class MainActivity : BaseActivity() {
         showCard(dialog, content)
     }
     private fun toggleFavorite(book: Book) {
-        BookStore.setFavorite(this, book.id, !book.favorite)
-        reload()
+        val next = !book.favorite
+        if (!BookStore.setFavorite(this, book.id, next)) {
+            Toast.makeText(this, "保存失败，请重试", Toast.LENGTH_SHORT).show()
+            return
+        }
+        book.favorite = next
+        val leavesList = currentTab == Tab.FAVORITE && !next
+        if (leavesList && books.size <= 1) {
+            // 取消后列表会空，走一次完整刷新来更新空态与底图
+            reload()
+            return
+        }
+        // 其余情况只动这一格：整表刷新会让所有封面重绘，肉眼就是全屏闪一下
+        if (leavesList) {
+            books.removeAll { it.id == book.id }
+            adapter.removeBook(book.id)
+        } else {
+            adapter.notifyFavoriteChanged(book.id)
+        }
     }
 
     private fun startSelecting(book: Book?) {
@@ -1197,7 +1227,7 @@ class MainActivity : BaseActivity() {
         selectedIndex: Int = -1
     ) {
         val scrim = findViewById<View>(R.id.menuScrim)
-        val panel = findViewById<AgslGlassView>(R.id.menuPanel)
+        val panel = findViewById<GlassView>(R.id.menuPanel)
         if (panel.visibility == View.VISIBLE) {
             hideHeaderMenu()
             return

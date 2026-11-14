@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
@@ -320,7 +322,7 @@ class NightModeActivity : BaseActivity() {
             setColor(0x2EFFFFFF)
         }
         val skin = SkinStore.load(this)
-        val glass = AgslGlassView(this).apply {
+        val glass = GlassView(this).apply {
             cornerRadius = readerDp(26).toFloat()
             blurRadius = readerDp(11).toFloat()
             tintColor = if (skin.pale) 0xFFDDE4ED.toInt() else Color.WHITE

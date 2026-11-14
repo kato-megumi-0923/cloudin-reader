@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -300,15 +302,15 @@ class DeviceSmokeTest {
                         assertEquals(context.readerDp(46), back.layoutParams.width)
                         assertEquals(context.readerDp(46), back.layoutParams.height)
                         assertEquals(context.getString(R.string.settings_back), back.contentDescription)
-                        val toolbar = activity.findViewById<AgslGlassView>(R.id.bottomBar)
+                        val toolbar = activity.findViewById<GlassView>(R.id.bottomBar)
                         assertTrue(toolbar.isShown)
                         fun click(id: Int) {
                             val button = toolbar.findViewById<View>(id)
-                            assertFalse(button is AgslGlassView)
+                            assertFalse(button is GlassView)
                             assertTrue(button.isShown)
                             assertTrue(button.performClick())
                         }
-                        val panel = activity.findViewById<AgslGlassView>(R.id.settingsPanel)
+                        val panel = activity.findViewById<GlassView>(R.id.settingsPanel)
                         fun controls(label: String) = arrayListOf<View>().also {
                             panel.findViewsWithText(it, label, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
                         }
@@ -321,10 +323,13 @@ class DeviceSmokeTest {
                         assertTrue(panel.getChildAt(0).translationX < 0f)
                         assertTrue(controls("关闭阅读设置").isEmpty())
                         assertTrue(panel.findViewById<View>(R.id.readerSettingMore).performClick())
-                        assertTrue(panel.findViewById<View>(R.id.readerSettingProgress).performClick())
-                        assertTrue(panel.findViewById<View>(R.id.seekBar).isShown)
-                        assertTrue(controls("返回阅读设置").isEmpty())
-                        assertTrue(panel.getChildAt(0).translationX > 0f)
+                        // 「更多设置」里只留音量键翻页；阅读进度只有底栏那一个入口（上面已验过）
+                        val progressEntries = arrayListOf<View>()
+                        panel.findViewsWithText(progressEntries, "阅读进度", View.FIND_VIEWS_WITH_TEXT)
+                        assertTrue(progressEntries.isEmpty())
+                        // 「更多设置」是子页面，应该有返回按钮（进度页是 main，没有）
+                        assertEquals(1, controls("返回阅读设置").size)
+                        assertTrue("more translationX=${panel.getChildAt(0).translationX}", panel.getChildAt(0).translationX > 0f)
                         click(R.id.tabSettings)
                         assertTrue(panel.findViewById<View>(R.id.readerSettingTurn).performClick())
                         val modes = arrayListOf<View>()

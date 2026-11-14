@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
@@ -21,7 +23,7 @@ internal enum class GlassStyle(val label: Int) {
                 return
             }
             is LiquidGlassView -> applyToGlass(view)
-            is AgslGlassView -> view.frosted = this == FROSTED
+            is GlassView -> view.frosted = this == FROSTED
         }
         if (view is ViewGroup) view.children.forEach { applyTo(it) }
     }

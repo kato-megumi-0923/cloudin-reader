@@ -1,5 +1,7 @@
 package com.cloudin.reader
 
+import com.cloudin.refract.GlassView
+
 import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
 import android.content.Context
@@ -40,7 +42,7 @@ class ShelfTabBar @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
-    data class Tab(val label: String, val icon: Int)
+    data class Tab(val label: String, val icon: Int, val iconFilled: Int = icon)
 
     private val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
     private val surface = LiquidGlassView(context).apply {
@@ -54,7 +56,7 @@ class ShelfTabBar @JvmOverloads constructor(
         glassTint = 0x60FAFAFB
         cornerRadius = dp(100).toFloat()
     }
-    private val opticalSurface = AgslGlassView(context).takeIf { it.isShaderSupported }?.apply {
+    private val opticalSurface = GlassView(context).takeIf { it.isShaderSupported }?.apply {
         cornerRadius = dp(28).toFloat()
         refractionHeight = dp(7).toFloat()
         refractionAmount = dp(9).toFloat()
@@ -62,6 +64,8 @@ class ShelfTabBar @JvmOverloads constructor(
         tintAlpha = 0.24f
     }
     private val tabs = mutableListOf<LinearLayout>()
+    private val iconViews = mutableListOf<ImageView>()
+    private var currentItems: List<Tab> = emptyList()
     private val accent = context.getColor(R.color.shelf_tab_selected)
     private val ink = context.getColor(R.color.ink)
     private val renderer = TabLensRenderer(context, accent)
@@ -111,7 +115,22 @@ class ShelfTabBar @JvmOverloads constructor(
         if (index !in tabs.indices || index == activeIndex) return false
         activeIndex = index
         tabs.forEachIndexed { position, tab -> tab.isSelected = position == index }
+        applyIconStates()
         return true
+    }
+
+    /** 选中用实心图标、未选中用空心；换图后要让透镜重新抓一次底图。 */
+    private fun applyIconStates() {
+        iconViews.forEachIndexed { position, view ->
+            val item = currentItems.getOrNull(position) ?: return@forEachIndexed
+            val res = if (position == activeIndex) item.iconFilled else item.icon
+            if (view.tag != res) {
+                view.tag = res
+                view.setImageResource(res)
+            }
+        }
+        sourceDirty = true
+        invalidate()
     }
 
     init {
@@ -159,6 +178,8 @@ class ShelfTabBar @JvmOverloads constructor(
     fun setTabs(items: List<Tab>) {
         row.removeAllViews()
         tabs.clear()
+        iconViews.clear()
+        currentItems = items
         items.forEachIndexed { index, tab ->
             val item = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -169,8 +190,10 @@ class ShelfTabBar @JvmOverloads constructor(
             }
             val icon = ImageView(context).apply {
                 setImageResource(tab.icon)
+                tag = tab.icon
                 imageTintList = ColorStateList.valueOf(ink)
             }
+            iconViews.add(icon)
             val label = TextView(context).apply {
                 text = tab.label
                 setTextColor(ink)
@@ -185,6 +208,7 @@ class ShelfTabBar @JvmOverloads constructor(
             tabs.add(item)
         }
         if (selectedIndex !in tabs.indices) selectedIndex = 0
+        applyIconStates()
         resetMotion()
         sourceDirty = true
     }
