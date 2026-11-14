@@ -651,12 +651,14 @@ class MainActivity : BaseActivity() {
                 rows.minimumHeight = dp(56) * (settings.size + 4)
                 rows.setPadding(0, 0, 0, 0)
                 cardTitle.text = getString(R.string.profile_settings)
+                // 深色玻璃底画半透明白线，浅色底画半透明黑线
+                val divider = if (SkinStore.load(this).dark) 0x4DFFFFFF else 0x1F000000
                 addCardRow(content, "皮肤", color) { openProfilePage(SkinActivity::class.java) }
-                addCardRow(content, "默认封面", color) { openProfilePage(DefaultCoverActivity::class.java) }
-                addCardRow(content, getString(R.string.reader_background), color) { openProfilePage(ReadingBackgroundActivity::class.java) }
-                addCardRow(content, getString(R.string.reader_turn_mode), color) { navigate(ProfileSettingsPage.TURN) }
+                addCardRow(content, "默认封面", color, dividerColor = divider) { openProfilePage(DefaultCoverActivity::class.java) }
+                addCardRow(content, getString(R.string.reader_background), color, dividerColor = divider) { openProfilePage(ReadingBackgroundActivity::class.java) }
+                addCardRow(content, getString(R.string.reader_turn_mode), color, dividerColor = divider) { navigate(ProfileSettingsPage.TURN) }
                 settings.forEach { (destination, item) ->
-                    addCardRow(content, item.title, color) { navigate(destination) }
+                    addCardRow(content, item.title, color, dividerColor = divider) { navigate(destination) }
                 }
                 return
             }
@@ -783,9 +785,19 @@ class MainActivity : BaseActivity() {
         color: Int,
         clickable: Boolean = true,
         selected: Boolean = false,
+        dividerColor: Int = Color.TRANSPARENT,
         onClick: (View) -> Unit = {}
     ) {
         val rows = content.findViewById<LinearLayout>(R.id.cardRows)
+        // 行间分割线：左右缩进与文字对齐；非透明才画
+        if (dividerColor != Color.TRANSPARENT) {
+            val divider = View(content.context)
+            divider.setBackgroundColor(dividerColor)
+            rows.addView(divider, LinearLayout.LayoutParams(-1, dp(1)).apply {
+                marginStart = dp(26)
+                marginEnd = dp(26)
+            })
+        }
         val row = layoutInflater.inflate(R.layout.row_dialog_action, rows, false)
         val text = row.findViewById<TextView>(R.id.cardRowText)
         setCardRowSelection(row, label, selected)
