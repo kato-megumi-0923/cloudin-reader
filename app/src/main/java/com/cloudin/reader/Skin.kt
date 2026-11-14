@@ -263,8 +263,8 @@ internal object SkinSync {
         if (p.getString(KEY_BEFORE_NIGHT, null) == null) {
             p.edit().putString(KEY_BEFORE_NIGHT, encode(current)).apply()
         }
-        // 夜间底色跟随「夜间使用深灰配色」：开 = 深灰，关 = 纯黑
-        val color = if (NightMode.darkGray(context)) Skin.INK_BLACK else Skin.NIGHT_BLACK
+        // 夜间底色跟随「夜间使用纯黑配色」：开 = 纯黑，关 = 深灰
+        val color = if (NightMode.pureBlack(context)) Skin.NIGHT_BLACK else Skin.INK_BLACK
         SkinStore.save(context, Skin(SkinKind.COLOR, color, dark = true))
     }
 

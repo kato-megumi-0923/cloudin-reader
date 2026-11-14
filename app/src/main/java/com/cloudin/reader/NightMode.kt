@@ -14,7 +14,7 @@ import java.util.Calendar
 internal object NightMode {
 
     private const val PREFS = "night_mode"
-    private const val KEY_DARK_GRAY = "dark_gray"
+    private const val KEY_PURE_BLACK = "pure_black"
     private const val KEY_AUTO = "auto"
     private const val KEY_START = "start"
     private const val KEY_END = "end"
@@ -25,10 +25,10 @@ internal object NightMode {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** 夜间是否用深灰配色；关闭则纯黑。 */
-    fun darkGray(context: Context) = prefs(context).getBoolean(KEY_DARK_GRAY, true)
-    fun setDarkGray(context: Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_DARK_GRAY, value).apply()
+    /** 夜间底是否用纯黑（默认）；关闭则用深灰。 */
+    fun pureBlack(context: Context) = prefs(context).getBoolean(KEY_PURE_BLACK, true)
+    fun setPureBlack(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_PURE_BLACK, value).apply()
     }
 
     fun auto(context: Context) = prefs(context).getBoolean(KEY_AUTO, false)
@@ -72,7 +72,7 @@ internal object NightMode {
     }
 
     fun nightTheme(context: Context): Int =
-        if (darkGray(context)) ReaderPrefs.THEME_NIGHT else ReaderPrefs.THEME_BLACK
+        if (pureBlack(context)) ReaderPrefs.THEME_BLACK else ReaderPrefs.THEME_NIGHT
 
     /**
      * 把当前应该处于的状态落到阅读主题与书架主题上。返回是否真的改动过
@@ -102,7 +102,7 @@ internal object NightMode {
 
     /** 深灰/纯黑切换后，夜间默认皮肤要跟着换底色。只换「夜间默认色」，不覆盖用户自选深色。 */
     private fun syncNightSkin(context: Context): Boolean {
-        val target = if (darkGray(context)) Skin.INK_BLACK else Skin.NIGHT_BLACK
+        val target = if (pureBlack(context)) Skin.NIGHT_BLACK else Skin.INK_BLACK
         val skin = SkinStore.load(context)
         if (skin.kind != SkinKind.COLOR || !skin.isCoolBlack || skin.color == target) return false
         SkinStore.save(context, Skin(SkinKind.COLOR, target, dark = true))

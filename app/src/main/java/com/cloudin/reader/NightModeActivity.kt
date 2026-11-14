@@ -65,16 +65,16 @@ class NightModeActivity : BaseActivity() {
         list.removeAllViews()
         val card = settingCard(dark)
 
-        // 1. 夜间用深灰还是纯黑
-        val gray = GlassSwitch(this).apply {
+        // 1. 夜间底用纯黑还是深灰
+        val pure = GlassSwitch(this).apply {
             this.dark = this@NightModeActivity.dark
-            bind(NightMode.darkGray(this@NightModeActivity))
+            bind(NightMode.pureBlack(this@NightModeActivity))
             onCheckedChange = { on ->
-                NightMode.setDarkGray(this@NightModeActivity, on)
+                NightMode.setPureBlack(this@NightModeActivity, on)
                 applyAndRefresh()
             }
         }
-        card.addSettingRow(dark, "夜间使用深灰配色", clickable = false, trailing = gray)
+        card.addSettingRow(dark, "夜间使用纯黑配色", clickable = false, trailing = pure)
 
         // 2. 按时间自动切换
         val auto = GlassSwitch(this).apply {
