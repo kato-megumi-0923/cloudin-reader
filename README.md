@@ -7,7 +7,7 @@
 ![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white)
 ![AGSL](https://img.shields.io/badge/AGSL-Android%2013%2B-4B8BBE)
-![Version](https://img.shields.io/badge/version-0.2.23-C0392B)
+![Version](https://img.shields.io/badge/version-0.2.22-C0392B)
 
 一个给自己写的阅读器：书架、分页、翻页动画、阅读统计全部本地完成，界面按 iOS 26 的「液态玻璃」风格重做过一轮。
 
