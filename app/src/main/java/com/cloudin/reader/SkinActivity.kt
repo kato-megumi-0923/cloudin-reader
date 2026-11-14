@@ -185,11 +185,11 @@ class SkinActivity : BaseActivity() {
             if (page == Page.COLOR || page == Page.PREVIEW || page == Page.CROP) View.VISIBLE else View.GONE
         confirmButton.text = if (page == Page.CROP) "下一步" else "确认"
         titleView.text = when (page) {
-            Page.CATALOG -> "皮肤"
+            Page.CATALOG -> "主题"
             Page.COLOR -> "自选色"
             Page.PHOTOS -> "全部照片"
             Page.CROP -> "图片预览"
-            Page.PREVIEW -> "皮肤预览"
+            Page.PREVIEW -> "主题预览"
         }
         content.removeAllViews()
         val body = when (page) {

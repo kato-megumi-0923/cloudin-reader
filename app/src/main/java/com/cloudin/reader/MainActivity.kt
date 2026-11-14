@@ -653,7 +653,7 @@ class MainActivity : BaseActivity() {
                 cardTitle.text = getString(R.string.profile_settings)
                 // 深色玻璃底画半透明白线，浅色底画半透明黑线
                 val divider = if (SkinStore.load(this).dark) 0x4DFFFFFF else 0x1F000000
-                addCardRow(content, "皮肤", color) { openProfilePage(SkinActivity::class.java) }
+                addCardRow(content, "主题", color) { openProfilePage(SkinActivity::class.java) }
                 addCardRow(content, "默认封面", color, dividerColor = divider) { openProfilePage(DefaultCoverActivity::class.java) }
                 addCardRow(content, getString(R.string.reader_background), color, dividerColor = divider) { openProfilePage(ReadingBackgroundActivity::class.java) }
                 addCardRow(content, getString(R.string.reader_turn_mode), color, dividerColor = divider) { navigate(ProfileSettingsPage.TURN) }
