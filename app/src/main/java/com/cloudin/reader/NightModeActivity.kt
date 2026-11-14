@@ -1,5 +1,8 @@
 package com.cloudin.reader
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
@@ -31,6 +34,10 @@ class NightModeActivity : BaseActivity() {
     private lateinit var autoDot: RadioDot
     private lateinit var followDot: RadioDot
     private lateinit var timesRow: LinearLayout
+    private lateinit var autoRow: View
+    private lateinit var followRow: View
+    private lateinit var masterSwitch: GlassSwitch
+    private lateinit var hintView: View
     private var dark = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,36 +78,49 @@ class NightModeActivity : BaseActivity() {
     private fun rebuild() {
         list.removeAllViews()
         val card = settingCard(dark)
-        val autoOn = NightMode.auto(this)
-        val followOn = NightMode.followSystem(this)
+        val on = NightMode.enabled(this)
 
-        // 单选组：按时间区间 / 跟随系统，二者互斥；再点已选中的可取消
+        // 总开关：关掉后下面两种方式都灰掉，但会记住上次的选择
+        masterSwitch = GlassSwitch(this).apply {
+            this.dark = this@NightModeActivity.dark
+            bind(on)
+            onCheckedChange = { toggleMaster(it) }
+        }
+        card.addSettingRow(dark, "自动切换夜间模式", clickable = false, trailing = masterSwitch)
+
         autoDot = RadioDot(this).apply {
             this.dark = this@NightModeActivity.dark
-            bind(autoOn)
+            bind(NightMode.auto(this@NightModeActivity) && on)
         }
-        card.addSettingRow(dark, "自定义夜间启用时间区间", leading = autoDot, showArrow = false) {
-            toggleTimeRange()
-        }
+        autoRow = card.addSettingRow(
+            dark, "自定义夜间启用时间区间", leading = autoDot, showArrow = false
+        ) {
+            if (NightMode.enabled(this@NightModeActivity)) toggleTimeRange()
+        }.apply { alpha = if (on) 1f else DISABLED_ALPHA }
 
         timesRow = buildTimes().apply {
-            visibility = if (autoOn) View.VISIBLE else View.GONE
-            alpha = if (autoOn) 1f else 0f
+            val visible = on && NightMode.auto(this@NightModeActivity)
+            visibility = if (visible) View.VISIBLE else View.GONE
+            alpha = if (visible) 1f else 0f
         }
         card.addView(timesRow, LinearLayout.LayoutParams(-1, -2))
 
         followDot = RadioDot(this).apply {
             this.dark = this@NightModeActivity.dark
-            bind(followOn)
+            bind(NightMode.followSystem(this@NightModeActivity) && on)
         }
-        card.addSettingRow(dark, "跟随系统", leading = followDot, showArrow = false) {
-            toggleFollowSystem()
-        }
+        followRow = card.addSettingRow(
+            dark, "跟随系统", leading = followDot, showArrow = false
+        ) {
+            if (NightMode.enabled(this@NightModeActivity)) toggleFollowSystem()
+        }.apply { alpha = if (on) 1f else DISABLED_ALPHA }
 
-        card.addView(readerLabel(hint(), SkinTheme.soft(dark), 12f).apply {
+        hintView = readerLabel(hint(), SkinTheme.soft(dark), 12f).apply {
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setPadding(readerDp(52), 0, readerDp(18), readerDp(14))
-        }, LinearLayout.LayoutParams(-1, -2))
+            alpha = if (on) 1f else DISABLED_ALPHA
+        }
+        card.addView(hintView, LinearLayout.LayoutParams(-1, -2))
 
         list.addView(card, LinearLayout.LayoutParams(-1, -2))
     }
@@ -125,44 +145,112 @@ class NightModeActivity : BaseActivity() {
         return times
     }
 
+    /** 总开关：打开时若还没有方式就默认选中时间区间；关掉则直接退出夜间。 */
+    private fun toggleMaster(value: Boolean) {
+        NightMode.setEnabled(this, value)
+        if (value) {
+            if (!NightMode.auto(this) && !NightMode.followSystem(this)) NightMode.setAuto(this, true)
+        } else {
+            NightMode.exitNight(this)
+        }
+        val changed = NightMode.apply(this)
+        syncEnabledUi()
+        if (changed) list.postDelayed({ recreate() }, 280)
+    }
+
     /** 按时间区间：选中即开启自动，同时取消跟随系统；再点取消则两个都不启用。 */
     private fun toggleTimeRange() {
         val next = !NightMode.auto(this)
         NightMode.setAuto(this, next)
         if (next) NightMode.setFollowSystem(this, false)
-        if (!next && !NightMode.followSystem(this)) NightMode.exitNight(this)
+        if (!next && !NightMode.followSystem(this)) {
+            // 两个方式都取消了，总开关跟着关掉，避免「开着却没选方式」的中间态
+            NightMode.setEnabled(this, false)
+            NightMode.exitNight(this)
+        }
         val changed = NightMode.apply(this)
         syncChoices()
-        // 只有底色真的变了才重建页面，否则留着让圆点动画播完
-        if (changed) list.postDelayed({ recreate() }, 260)
+        if (changed) list.postDelayed({ recreate() }, 280)
     }
 
     private fun toggleFollowSystem() {
         val next = !NightMode.followSystem(this)
         NightMode.setFollowSystem(this, next)
         if (next) NightMode.setAuto(this, false)
-        if (!next && !NightMode.auto(this)) NightMode.exitNight(this)
+        if (!next && !NightMode.auto(this)) {
+            NightMode.setEnabled(this, false)
+            NightMode.exitNight(this)
+        }
         val changed = NightMode.apply(this)
         syncChoices()
-        if (changed) list.postDelayed({ recreate() }, 260)
+        if (changed) list.postDelayed({ recreate() }, 280)
     }
 
-    /** 原地更新圆点与时间区间的显隐（不重建视图，保证动画连续）。 */
+    private fun syncEnabledUi() {
+        if (!::autoRow.isInitialized) return
+        val on = NightMode.enabled(this)
+        val target = if (on) 1f else DISABLED_ALPHA
+        autoRow.animate().alpha(target).setDuration(160).start()
+        followRow.animate().alpha(target).setDuration(160).start()
+        hintView.animate().alpha(target).setDuration(160).start()
+        syncChoices()
+    }
+
+    /** 原地更新圆点与时间区间（不重建视图，保证动画连续）。 */
     private fun syncChoices() {
         if (!::autoDot.isInitialized) return
-        autoDot.chosen = NightMode.auto(this)
-        followDot.chosen = NightMode.followSystem(this)
+        val on = NightMode.enabled(this)
+        if (::masterSwitch.isInitialized) masterSwitch.checked = on
+        autoDot.chosen = NightMode.auto(this) && on
+        followDot.chosen = NightMode.followSystem(this) && on
+        animateTimesVisible(on && NightMode.auto(this))
+    }
 
-        val showTimes = NightMode.auto(this)
-        timesRow.animate().cancel()
-        if (showTimes) {
-            timesRow.visibility = View.VISIBLE
-            timesRow.animate().alpha(1f).setDuration(180).start()
-        } else if (timesRow.visibility == View.VISIBLE) {
-            timesRow.animate().alpha(0f).setDuration(160).withEndAction {
-                if (!NightMode.auto(this)) timesRow.visibility = View.GONE
-            }.start()
+    /** 时间区间用「高度 + 透明度」一起动，只做淡入淡出会让下面的行瞬间跳位，很生硬。 */
+    private fun animateTimesVisible(show: Boolean) {
+        val view = timesRow
+        val showing = view.visibility == View.VISIBLE && view.height > 0
+        if (show == showing) {
+            view.alpha = if (show) 1f else 0f
+            if (!show) view.visibility = View.GONE
+            return
         }
+        view.animate().cancel()
+        val parentWidth = (view.parent as? View)?.width ?: resources.displayMetrics.widthPixels
+        val startHeight = if (view.visibility == View.VISIBLE) view.height else 0
+        view.visibility = View.VISIBLE
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(parentWidth, View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val endHeight = if (show) view.measuredHeight else 0
+        if (startHeight == endHeight) {
+            view.alpha = if (show) 1f else 0f
+            if (!show) view.visibility = View.GONE
+            return
+        }
+        val anim = ValueAnimator.ofInt(startHeight, endHeight).apply {
+            duration = 240
+            addUpdateListener {
+                val h = it.animatedValue as Int
+                view.layoutParams = view.layoutParams.apply { height = h }
+                view.alpha = if (endHeight == 0) {
+                    if (startHeight == 0) 0f else 1f - h.toFloat() / startHeight
+                } else {
+                    h.toFloat() / endHeight
+                }
+            }
+        }
+        anim.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                view.layoutParams = view.layoutParams.apply {
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT
+                }
+                view.alpha = if (show) 1f else 0f
+                if (!show) view.visibility = View.GONE
+            }
+        })
+        anim.start()
     }
 
     private fun hint(): String {
@@ -254,5 +342,10 @@ class NightModeActivity : BaseActivity() {
         NightMode.apply(this)
         // 底色可能从浅变深（或反之），重建一次让背景与文字整体跟上
         recreate()
+    }
+
+    private companion object {
+        /** 总开关关闭时下面两项的透明度。 */
+        const val DISABLED_ALPHA = 0.38f
     }
 }

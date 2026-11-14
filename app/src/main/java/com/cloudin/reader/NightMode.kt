@@ -18,11 +18,18 @@ internal object NightMode {
     private const val KEY_START = "start"
     private const val KEY_END = "end"
     private const val KEY_FOLLOW = "follow_system"
+    private const val KEY_ENABLED = "enabled"
 
     private const val DEFAULT_START = 20 * 60
     private const val DEFAULT_END = 7 * 60
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** 总开关：关闭时下面两种触发方式都不生效，但会记住上次的选择。 */
+    fun enabled(context: Context) = prefs(context).getBoolean(KEY_ENABLED, false)
+    fun setEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ENABLED, value).apply()
+    }
 
     fun auto(context: Context) = prefs(context).getBoolean(KEY_AUTO, false)
     fun setAuto(context: Context, value: Boolean) {
@@ -72,8 +79,9 @@ internal object NightMode {
      * （改动过调用方需要刷新界面）。
      */
     fun apply(context: Context): Boolean {
-        // 只有「自动」或「跟随系统」开启时才由这里接管；两个都关时，夜间与否完全交给
+        // 只有总开关打开、且选了某一种触发方式时才由这里接管；否则夜间与否完全交给
         // 阅读主题本身，避免用户手动切回日间后被反复拽回炫酷黑。
+        if (!enabled(context)) return false
         if (!auto(context) && !followSystem(context)) return false
         val night = isNight(context)
         val current = ReaderPrefs.theme(context)
@@ -107,9 +115,9 @@ internal object NightMode {
 
     /** 设置页右侧的状态文案。 */
     fun label(context: Context): String = when {
+        !enabled(context) -> "已关闭"
         followSystem(context) -> "跟随系统"
         auto(context) -> "自动 " + timeText(startMinute(context)) + "-" + timeText(endMinute(context))
-        ReaderPrefs.palette(ReaderPrefs.theme(context)).dark -> "已开启"
-        else -> "已关闭"
+        else -> "已开启"
     }
 }
