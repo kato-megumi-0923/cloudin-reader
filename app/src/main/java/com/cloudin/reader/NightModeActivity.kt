@@ -28,6 +28,9 @@ class NightModeActivity : BaseActivity() {
     private lateinit var backdrop: View
     private lateinit var pageRoot: View
     private lateinit var list: LinearLayout
+    private lateinit var autoDot: RadioDot
+    private lateinit var followDot: RadioDot
+    private lateinit var timesRow: LinearLayout
     private var dark = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,31 +71,45 @@ class NightModeActivity : BaseActivity() {
     private fun rebuild() {
         list.removeAllViews()
         val card = settingCard(dark)
+        val autoOn = NightMode.auto(this)
+        val followOn = NightMode.followSystem(this)
 
-        // 1. 按时间自动切换
-        val auto = GlassSwitch(this).apply {
+        // 单选组：按时间区间 / 跟随系统，二者互斥；再点已选中的可取消
+        autoDot = RadioDot(this).apply {
             this.dark = this@NightModeActivity.dark
-            bind(NightMode.auto(this@NightModeActivity))
-            onCheckedChange = { on ->
-                NightMode.setAuto(this@NightModeActivity, on)
-                if (on) NightMode.setFollowSystem(this@NightModeActivity, false) else NightMode.exitNight(this@NightModeActivity)
-                applyAndRefresh()
-            }
+            bind(autoOn)
         }
-        card.addSettingRow(dark, "自动切换夜间模式", clickable = false, trailing = auto)
-
-        // 自动关掉时，下面的时段与跟随系统都收起来；跟随系统仍开着则继续显示（否则没法关）
-        if (!NightMode.auto(this) && !NightMode.followSystem(this)) {
-            list.addView(card, LinearLayout.LayoutParams(-1, -2))
-            return
+        card.addSettingRow(dark, "自定义夜间启用时间区间", leading = autoDot, showArrow = false) {
+            toggleTimeRange()
         }
 
-        // 2. 时间段
-        card.addSettingRow(dark, "自定义夜间启用时间区间", clickable = false)
+        timesRow = buildTimes().apply {
+            visibility = if (autoOn) View.VISIBLE else View.GONE
+            alpha = if (autoOn) 1f else 0f
+        }
+        card.addView(timesRow, LinearLayout.LayoutParams(-1, -2))
+
+        followDot = RadioDot(this).apply {
+            this.dark = this@NightModeActivity.dark
+            bind(followOn)
+        }
+        card.addSettingRow(dark, "跟随系统", leading = followDot, showArrow = false) {
+            toggleFollowSystem()
+        }
+
+        card.addView(readerLabel(hint(), SkinTheme.soft(dark), 12f).apply {
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setPadding(readerDp(52), 0, readerDp(18), readerDp(14))
+        }, LinearLayout.LayoutParams(-1, -2))
+
+        list.addView(card, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun buildTimes(): LinearLayout {
         val times = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
-            setPadding(readerDp(18), 0, readerDp(16), readerDp(12))
+            setPadding(readerDp(52), 0, readerDp(16), readerDp(12))
         }
         times.addView(timeButton(NightMode.startMinute(this), isStart = true) { picked ->
             NightMode.setStartMinute(this, picked)
@@ -105,29 +122,47 @@ class NightModeActivity : BaseActivity() {
             NightMode.setEndMinute(this, picked)
             applyAndRefresh()
         }, LinearLayout.LayoutParams(readerDp(96), readerDp(40)))
-        card.addView(times, LinearLayout.LayoutParams(-1, -2))
+        return times
+    }
 
-        // 3. 跟随系统
-        val follow = NightMode.followSystem(this)
-        val dot = RadioDot(this).apply { chosen = follow }
-        card.addSettingRow(dark, "跟随系统", clickable = false, trailing = dot).apply {
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                val next = !NightMode.followSystem(this@NightModeActivity)
-                NightMode.setFollowSystem(this@NightModeActivity, next)
-                if (next) NightMode.setAuto(this@NightModeActivity, false) else NightMode.exitNight(this@NightModeActivity)
-                applyAndRefresh()
-            }
+    /** 按时间区间：选中即开启自动，同时取消跟随系统；再点取消则两个都不启用。 */
+    private fun toggleTimeRange() {
+        val next = !NightMode.auto(this)
+        NightMode.setAuto(this, next)
+        if (next) NightMode.setFollowSystem(this, false)
+        if (!next && !NightMode.followSystem(this)) NightMode.exitNight(this)
+        val changed = NightMode.apply(this)
+        syncChoices()
+        // 只有底色真的变了才重建页面，否则留着让圆点动画播完
+        if (changed) list.postDelayed({ recreate() }, 260)
+    }
+
+    private fun toggleFollowSystem() {
+        val next = !NightMode.followSystem(this)
+        NightMode.setFollowSystem(this, next)
+        if (next) NightMode.setAuto(this, false)
+        if (!next && !NightMode.auto(this)) NightMode.exitNight(this)
+        val changed = NightMode.apply(this)
+        syncChoices()
+        if (changed) list.postDelayed({ recreate() }, 260)
+    }
+
+    /** 原地更新圆点与时间区间的显隐（不重建视图，保证动画连续）。 */
+    private fun syncChoices() {
+        if (!::autoDot.isInitialized) return
+        autoDot.chosen = NightMode.auto(this)
+        followDot.chosen = NightMode.followSystem(this)
+
+        val showTimes = NightMode.auto(this)
+        timesRow.animate().cancel()
+        if (showTimes) {
+            timesRow.visibility = View.VISIBLE
+            timesRow.animate().alpha(1f).setDuration(180).start()
+        } else if (timesRow.visibility == View.VISIBLE) {
+            timesRow.animate().alpha(0f).setDuration(160).withEndAction {
+                if (!NightMode.auto(this)) timesRow.visibility = View.GONE
+            }.start()
         }
-
-        // 4. 说明
-        card.addView(readerLabel(hint(), SkinTheme.soft(dark), 12f).apply {
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setPadding(readerDp(18), 0, readerDp(18), readerDp(14))
-        }, LinearLayout.LayoutParams(-1, -2))
-
-        list.addView(card, LinearLayout.LayoutParams(-1, -2))
     }
 
     private fun hint(): String {

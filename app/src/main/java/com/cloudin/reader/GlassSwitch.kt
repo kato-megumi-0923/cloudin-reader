@@ -117,24 +117,57 @@ class GlassSwitch @JvmOverloads constructor(
     private fun dp(value: Float) = value * resources.displayMetrics.density
 }
 
-/** 「跟随系统」用的单选圆点：选中时实心强调红 + 白色内点。 */
+/**
+ * 设置页的单选圆点：空心灰圈 → 选中时红圈 + 红色实心点，切换带缩放动画。
+ * 由动画进度插值圆环颜色与内点半径，取消选择就是反向播放。
+ */
 class RadioDot @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    var chosen = false
+    var dark = false
         set(value) {
             field = value
             invalidate()
         }
 
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    var chosen = false
+        set(value) {
+            if (field == value) return
+            field = value
+            animateTo(if (value) 1f else 0f)
+        }
+
+    private var progress = 0f
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(1.5f)
+        strokeWidth = dp(2f)
     }
-    private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private val inner = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private val accent = 0xFFD8453F.toInt()
+    private val idleLight = 0xFFB6B1AA.toInt()
+    private val idleDark = 0xFF6E7A8C.toInt()
+
+    /** 只设置状态，不播放动画（首次绑定用）。 */
+    fun bind(value: Boolean) {
+        chosen = value
+        progress = if (value) 1f else 0f
+        invalidate()
+    }
+
+    private fun animateTo(target: Float) {
+        ValueAnimator.ofFloat(progress, target).apply {
+            duration = 200
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                progress = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(dp(20f).toInt(), dp(20f).toInt())
@@ -143,15 +176,22 @@ class RadioDot @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         val cx = width / 2f
         val cy = height / 2f
-        val r = minOf(cx, cy) - dp(1f)
-        if (chosen) {
-            fill.color = 0xFFD8453F.toInt()
-            canvas.drawCircle(cx, cy, r, fill)
-            canvas.drawCircle(cx, cy, r * 0.38f, dot)
-        } else {
-            ring.color = 0x66000000
-            canvas.drawCircle(cx, cy, r, ring)
+        val stroke = dp(2f)
+        val radius = minOf(cx, cy) - stroke / 2f
+        ring.color = blend(if (dark) idleDark else idleLight, accent, progress)
+        canvas.drawCircle(cx, cy, radius, ring)
+        if (progress > 0.01f) {
+            inner.color = accent
+            canvas.drawCircle(cx, cy, radius * 0.52f * progress, inner)
         }
+    }
+
+    private fun blend(from: Int, to: Int, t: Float): Int {
+        val a = (Color.alpha(from) + (Color.alpha(to) - Color.alpha(from)) * t).toInt()
+        val r = (Color.red(from) + (Color.red(to) - Color.red(from)) * t).toInt()
+        val g = (Color.green(from) + (Color.green(to) - Color.green(from)) * t).toInt()
+        val b = (Color.blue(from) + (Color.blue(to) - Color.blue(from)) * t).toInt()
+        return Color.argb(a, r, g, b)
     }
 
     private fun dp(value: Float) = value * resources.displayMetrics.density

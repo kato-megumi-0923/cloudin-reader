@@ -36,7 +36,9 @@ internal fun LinearLayout.addSettingRow(
     label: String,
     value: String? = null,
     clickable: Boolean = true,
+    leading: View? = null,
     trailing: View? = null,
+    showArrow: Boolean = true,
     onClick: (() -> Unit)? = null
 ): LinearLayout {
     val ctx = context
@@ -59,6 +61,11 @@ internal fun LinearLayout.addSettingRow(
             background = ctx.selectableItemBackground()
         }
     }
+    if (leading != null) {
+        row.addView(leading, LinearLayout.LayoutParams(-2, -2).apply {
+            marginEnd = ctx.readerDp(14)
+        })
+    }
     row.addView(ctx.readerLabel(label, SkinTheme.title(dark), 15f).apply {
         gravity = Gravity.CENTER_VERTICAL
     }, LinearLayout.LayoutParams(0, -1, 1f))
@@ -74,7 +81,7 @@ internal fun LinearLayout.addSettingRow(
         })
     }
     if (onClick != null) {
-        row.addView(ImageView(ctx).apply {
+        if (showArrow) row.addView(ImageView(ctx).apply {
             setImageResource(R.drawable.ic_profile_chevron)
             imageTintList = ColorStateList.valueOf(SkinTheme.soft(dark))
             alpha = 0.7f
