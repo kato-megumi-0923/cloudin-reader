@@ -47,15 +47,15 @@ class ReadingStatsActivity : BaseActivity() {
         val backdrop = View(this).apply { setBackgroundResource(R.drawable.bg_aurora) }
         val toolbar = row().apply { gravity = Gravity.CENTER_VERTICAL }
         val back = glassBackButton(ink, backdrop) { onBackPressedDispatcher.onBackPressed() }
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
-            marginStart = dp(10)
-            marginEnd = dp(8)
+        toolbar.addView(back, LinearLayout.LayoutParams(readerDp(44), readerDp(44)).apply {
+            marginStart = readerDp(10)
+            marginEnd = readerDp(8)
         })
         header = label("", 17f, ink).apply { setTypeface(typeface, Typeface.BOLD) }
         toolbar.addView(header)
-        root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(52)))
+        root.addView(toolbar, LinearLayout.LayoutParams(-1, readerDp(52)))
         root.addView(View(this).apply { setBackgroundColor(getColor(R.color.shelf_separator)) },
-            LinearLayout.LayoutParams(-1, dp(1)))
+            LinearLayout.LayoutParams(-1, readerDp(1)))
         scroll = ScrollView(this).apply { isFillViewport = true }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(FrameLayout(this).apply {
@@ -104,7 +104,7 @@ class ReadingStatsActivity : BaseActivity() {
     }
 
     private fun overview(data: ReadingTimeline, today: LocalDate): LinearLayout = column().apply {
-        setPadding(dp(16), dp(12), dp(16), dp(16))
+        setPadding(readerDp(16), readerDp(12), readerDp(16), readerDp(16))
         val books = BookStore.load(this@ReadingStatsActivity)
         val completed = books.count { it.progress >= 0.999f }
         val bookCard = card { show(Page.BOOKS, animate = true) }
@@ -113,7 +113,7 @@ class ReadingStatsActivity : BaseActivity() {
         val ratio = if (books.isEmpty()) 0f else completed.toFloat() / books.size
         bookCard.addView(
             RatioBarView(this@ReadingStatsActivity, ratio),
-            LinearLayout.LayoutParams(-1, dp(9)).apply { topMargin = dp(10) }
+            LinearLayout.LayoutParams(-1, readerDp(9)).apply { topMargin = readerDp(10) }
         )
         addView(bookCard)
 
@@ -130,7 +130,7 @@ class ReadingStatsActivity : BaseActivity() {
         val monthCard = chartCard("本月阅读", hourLabel(monthly.last()),
             ReadingChartView(this@ReadingStatsActivity, monthly,
                 mapOf(0 to shortDate(monthDays.first()), monthDays.lastIndex to shortDate(monthDays.last())), false, true, today.dayOfMonth), Page.MONTHLY)
-        pair.addView(dayCard, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(8) })
+        pair.addView(dayCard, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = readerDp(8) })
         pair.addView(monthCard, LinearLayout.LayoutParams(0, -1, 1f))
         addView(pair, gap(12))
         addView(statRow("阅读天数", "${data.daysRead} 天"), gap(12))
@@ -140,20 +140,20 @@ class ReadingStatsActivity : BaseActivity() {
     private fun chartCard(name: String, value: String, chart: View, destination: Page): LinearLayout = card { show(destination, animate = true) }.apply {
         addView(label(name, 13f, muted))
         addView(metricRow(value, true), gap(16))
-        addView(chart, LinearLayout.LayoutParams(-1, dp(37)))
+        addView(chart, LinearLayout.LayoutParams(-1, readerDp(37)))
     }
 
     private fun statRow(name: String, value: String): View = row().apply {
         gravity = Gravity.CENTER_VERTICAL
         setBackgroundResource(R.drawable.bg_profile_card)
-        setPadding(dp(15), dp(9), dp(15), dp(9))
-        minimumHeight = dp(54)
+        setPadding(readerDp(15), readerDp(9), readerDp(15), readerDp(9))
+        minimumHeight = readerDp(54)
         addView(label(name, 13f, muted), LinearLayout.LayoutParams(0, -2, 1f))
         addView(metric(value))
     }
 
     private fun daily(data: ReadingTimeline, today: LocalDate): LinearLayout = column().apply {
-        setPadding(dp(24), dp(15), dp(24), dp(24))
+        setPadding(readerDp(24), readerDp(15), readerDp(24), readerDp(24))
         val week = data.week(today)
         val month = data.month(YearMonth.from(today))
         addView(chartSection("今日", data.hoursOn(today), mapOf(4 to "04:00", 12 to "12:00", 20 to "20:00"), true))
@@ -170,11 +170,11 @@ class ReadingStatsActivity : BaseActivity() {
         val chart = ReadingChartView(this@ReadingStatsActivity, values, labels, bars, false).apply {
             contentDescription = "$name，${durationLabel(values.sum())}"
         }
-        addView(chart, LinearLayout.LayoutParams(-1, dp(144)).apply { topMargin = dp(12) })
+        addView(chart, LinearLayout.LayoutParams(-1, readerDp(144)).apply { topMargin = readerDp(12) })
     }
 
     private fun monthly(data: ReadingTimeline, today: LocalDate): LinearLayout = column().apply {
-        setPadding(dp(16), dp(12), dp(16), dp(16))
+        setPadding(readerDp(16), readerDp(12), readerDp(16), readerDp(16))
         val current = YearMonth.from(today)
         val earliest = minOf(current.minusMonths(2), data.earliestDay?.let(YearMonth::from) ?: current)
         var month = earliest
@@ -221,7 +221,7 @@ class ReadingStatsActivity : BaseActivity() {
                                 .setPositiveButton(R.string.ok, null).show()
                         }
                     }
-                    container.addView(dayLabel, FrameLayout.LayoutParams(dp(36), dp(34), Gravity.CENTER))
+                    container.addView(dayLabel, FrameLayout.LayoutParams(readerDp(36), readerDp(34), Gravity.CENTER))
                 }
                 days.addView(container, cell(48))
             }
@@ -230,16 +230,16 @@ class ReadingStatsActivity : BaseActivity() {
         val legend = row().apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         listOf(lightDay to "少于30分钟", mediumDay to "30分钟至3小时", darkDay to "3小时及以上").forEach { (color, name) ->
             legend.addView(View(this@ReadingStatsActivity).apply { background = rounded(color, 9) },
-                LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginStart = dp(8); marginEnd = dp(4) })
+                LinearLayout.LayoutParams(readerDp(8), readerDp(8)).apply { marginStart = readerDp(8); marginEnd = readerDp(4) })
             legend.addView(label(name, 10f, muted))
         }
         addView(legend, gap(8))
     }
 
     private fun readBooks(): View = column().apply {
-        setPadding(dp(16), dp(12), dp(16), dp(16))
+        setPadding(readerDp(16), readerDp(12), readerDp(16), readerDp(16))
         val finished = BookStore.load(this@ReadingStatsActivity).filter { it.progress >= 0.999f }.sortedByDescending { it.lastRead }
-        if (finished.isEmpty()) addView(label("还没有读完的书", 15f, muted).apply { setPadding(dp(12), dp(16), dp(12), 0) })
+        if (finished.isEmpty()) addView(label("还没有读完的书", 15f, muted).apply { setPadding(readerDp(12), readerDp(16), readerDp(12), 0) })
         finished.forEach { book ->
             addView(card {
                 startActivity(Intent(this@ReadingStatsActivity, ReaderActivity::class.java).putExtra("bookId", book.id))
@@ -248,7 +248,7 @@ class ReadingStatsActivity : BaseActivity() {
     }
 
     private fun card(action: () -> Unit): LinearLayout = column().apply {
-        setPadding(dp(15), dp(14), dp(15), dp(14))
+        setPadding(readerDp(15), readerDp(14), readerDp(15), readerDp(14))
         setBackgroundResource(R.drawable.bg_profile_card)
         isFocusable = true
         setOnClickListener { action() }
@@ -258,11 +258,11 @@ class ReadingStatsActivity : BaseActivity() {
         gravity = Gravity.CENTER_VERTICAL
         addView(metric(value), LinearLayout.LayoutParams(0, -2, 1f))
         if (arrow) addView(label("›", 19f, muted).apply { gravity = Gravity.CENTER; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO },
-            LinearLayout.LayoutParams(dp(19), dp(22)))
+            LinearLayout.LayoutParams(readerDp(19), readerDp(22)))
     }
 
     private fun metric(value: String) = label(value, 23f, ink).apply { typeface = Typeface.SERIF }
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = readerDp(radius).toFloat() }
     private fun hourLabel(millis: Long): String = when {
         millis <= 0L -> "0 分钟"
         millis < 360_000L -> "${(millis / 60_000f).toInt().coerceAtLeast(1)} 分钟"
@@ -276,7 +276,6 @@ class ReadingStatsActivity : BaseActivity() {
     private fun label(text: String, size: Float, color: Int) = TextView(this).apply { this.text = text; textSize = size; setTextColor(color) }
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false }
-    private fun gap(top: Int) = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(top) }
-    private fun cell(height: Int) = LinearLayout.LayoutParams(0, dp(height), 1f)
-    private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
+    private fun gap(top: Int) = LinearLayout.LayoutParams(-1, -2).apply { topMargin = readerDp(top) }
+    private fun cell(height: Int) = LinearLayout.LayoutParams(0, readerDp(height), 1f)
 }

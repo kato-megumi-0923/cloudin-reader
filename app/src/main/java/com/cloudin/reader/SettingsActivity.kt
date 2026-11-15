@@ -87,7 +87,7 @@ class SettingsActivity : BaseActivity() {
         card.addSettingRow(dark, "默认封面") {
             open(DefaultCoverActivity::class.java)
         }
-        card.addSettingRow(dark, "书架布局", layoutName()) { pickLayout() }
+        card.addSettingRow(dark, "书架类型", shelfTypeName()) { pickShelfType() }
         card.addSettingRow(dark, "喜欢动画", LikeAnim.load(this).label) { pickLikeAnim() }
         card.addSettingRow(
             dark, getString(R.string.profile_glass_style),
@@ -100,17 +100,16 @@ class SettingsActivity : BaseActivity() {
         startActivity(Intent(this, destination))
     }
 
-    private fun layoutName(): String =
-        if (shelfPrefs().getString(KEY_LAYOUT, "grid") == "list") "列表" else "网格"
+    private fun shelfTypeName(): String =
+        if (ShelfType.load(shelfPrefs()) == ShelfType.LIST) "列表" else "网格"
 
     private fun shelfPrefs() = getSharedPreferences("shelf", MODE_PRIVATE)
 
-    private fun pickLayout() {
+    private fun pickShelfType() {
         val labels = listOf("网格", "列表")
-        showSettingChoice(dark, pageRoot, "书架布局", labels, if (layoutName() == "列表") 1 else 0) { index ->
-            shelfPrefs().edit()
-                .putString(KEY_LAYOUT, if (index == 1) "list" else "grid")
-                .apply()
+        val current = if (shelfTypeName() == "列表") 1 else 0
+        showSettingChoice(dark, pageRoot, "书架类型", labels, current) { index ->
+            ShelfType.save(shelfPrefs(), if (index == 1) ShelfType.LIST else ShelfType.GRID)
             rebuild()
         }
     }
@@ -176,10 +175,6 @@ class SettingsActivity : BaseActivity() {
             style.applyTo(window.decorView)
             rebuild()
         }
-    }
-
-    private companion object {
-        const val KEY_LAYOUT = "shelf_layout"
     }
 
     private val favoriteRed = 0xFFFF4D5E.toInt()

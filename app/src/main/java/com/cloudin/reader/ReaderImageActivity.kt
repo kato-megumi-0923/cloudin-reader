@@ -118,12 +118,8 @@ class ReaderImageActivity : BaseActivity() {
                 }
             }
         }
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.path, options)
-        options.inSampleSize = 1
-        while (maxOf(options.outWidth, options.outHeight) / options.inSampleSize > 4096) options.inSampleSize *= 2
-        options.inJustDecodeBounds = false
-        return BitmapFactory.decodeFile(file.path, options)
+        // 老系统（<28）没有 ImageDecoder，走通用降采样；超过 4096 再精确缩一次
+        return decodeSampledFile(file.path, 4096, scaleToFit = true)
     }
 
     private fun saveOriginal(context: Context, file: File) {

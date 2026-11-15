@@ -369,9 +369,7 @@ class DefaultCoverActivity : BaseActivity() {
     private fun nativeCoverWidth(index: Int): Int {
         val path = DefaultCoverStore.resolvePath(this, index)
         if (path != null) {
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(path, options)
-            if (options.outWidth > 0) return options.outWidth
+            imageSize(path)?.let { return it[0] }
         }
         val resourceId = resources.getIdentifier(
             String.format(java.util.Locale.ROOT, "cover_lib_%02d", index + 1),
@@ -509,17 +507,8 @@ class DefaultCoverActivity : BaseActivity() {
     }
 
     private fun decode(uri: Uri): Bitmap? = runCatching {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        if (bounds.outWidth <= 0) return null
-        var sample = 1
-        var longest = maxOf(bounds.outWidth, bounds.outHeight)
-        while (longest / 2 >= 1600) {
-            sample *= 2
-            longest /= 2
-        }
-        contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        decodeSampled(1600) { options ->
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         }
     }.getOrNull()
 

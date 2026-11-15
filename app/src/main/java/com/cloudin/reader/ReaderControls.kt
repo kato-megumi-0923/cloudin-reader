@@ -15,6 +15,14 @@ import android.widget.TextView
 
 internal fun Context.readerDp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 
+/** 小数版：给需要 Float 的属性（描边宽度、圆角、模糊半径）用。 */
+internal fun Context.readerDpF(value: Float): Float = value * resources.displayMetrics.density
+
+/** View 里直接写 `readerDp(16)`，不用每次 `context.readerDp(16)`。 */
+internal fun View.readerDp(value: Int) = context.readerDp(value)
+
+internal fun View.readerDpF(value: Float) = context.readerDpF(value)
+
 internal fun Context.readerPill(color: Int, radius: Int = 24) = GradientDrawable().apply {
     cornerRadius = readerDp(radius).toFloat()
     setColor(color)

@@ -1,6 +1,5 @@
 package com.cloudin.reader
 
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
@@ -183,10 +182,9 @@ object DocumentLoader {
         val key = file.path
         if (!key.startsWith(root.path + File.separator)) return null
         if (known.containsKey(key)) return known[key]
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(key, options)
-        val asset = if (options.outWidth > 0 && options.outHeight > 0) {
-            ReadingImage(key, options.outWidth, options.outHeight)
+        val size = imageSize(key)
+        val asset = if (size != null) {
+            ReadingImage(key, size[0], size[1])
         } else null
         known[key] = asset
         return asset

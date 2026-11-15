@@ -24,13 +24,13 @@ class GlassActionButton @JvmOverloads constructor(
 ) : GlassView(context, attrs, defStyleAttr) {
 
     // Refraction and blur sample beyond the button outline.
-    override val backdropPaddingPx: Int get() = dp(20)
+    override val backdropPaddingPx: Int get() = readerDp(20)
     private var backIcon: ImageView? = null
 
     val textView = TextView(context).apply {
         gravity = Gravity.CENTER
         maxLines = 1
-        setPadding(dp(14), 0, dp(14), 0)
+        setPadding(readerDp(14), 0, readerDp(14), 0)
         typeface = Typeface.DEFAULT_BOLD
         setTextColor(context.getColor(R.color.shelf_title))
     }
@@ -73,7 +73,6 @@ class GlassActionButton @JvmOverloads constructor(
         backIcon?.setColorFilter(color)
     }
 
-    private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
 
 internal fun GlassActionButton.configureBackButton(

@@ -41,16 +41,16 @@ class ReadingHistoryActivity : BaseActivity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val back = glassBackButton(ink, backdrop) { finish() }
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
-            marginStart = dp(10)
-            marginEnd = dp(8)
+        toolbar.addView(back, LinearLayout.LayoutParams(readerDp(44), readerDp(44)).apply {
+            marginStart = readerDp(10)
+            marginEnd = readerDp(8)
         })
         toolbar.addView(label(getString(R.string.history_title), 17f, ink).apply {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
-        root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(52)))
+        root.addView(toolbar, LinearLayout.LayoutParams(-1, readerDp(52)))
         root.addView(View(this).apply { setBackgroundColor(getColor(R.color.shelf_separator)) },
-            LinearLayout.LayoutParams(-1, dp(1)))
+            LinearLayout.LayoutParams(-1, readerDp(1)))
 
         val segments = readerSegments(
             Filter.entries.map { getString(it.title) }, filter.ordinal, ReaderPrefs.THEME_PURE_WHITE,
@@ -59,10 +59,10 @@ class ReadingHistoryActivity : BaseActivity() {
             filter = Filter.entries[index]
             refresh(resetScroll = true)
         }
-        root.addView(segments, LinearLayout.LayoutParams(-1, dp(44)).apply {
-            setMargins(dp(16), dp(14), dp(16), 0)
+        root.addView(segments, LinearLayout.LayoutParams(-1, readerDp(44)).apply {
+            setMargins(readerDp(16), readerDp(14), readerDp(16), 0)
         })
-        count = label("", 12f, muted).apply { setPadding(dp(16), dp(11), dp(16), dp(10)) }
+        count = label("", 12f, muted).apply { setPadding(readerDp(16), readerDp(11), readerDp(16), readerDp(10)) }
         root.addView(count)
         val body = FrameLayout(this)
         list = RecyclerView(this).apply {
@@ -159,5 +159,4 @@ class ReadingHistoryActivity : BaseActivity() {
         setTextColor(color)
     }
 
-    private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 }

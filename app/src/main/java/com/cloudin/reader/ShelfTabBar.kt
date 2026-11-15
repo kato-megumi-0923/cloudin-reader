@@ -30,7 +30,6 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.annotation.RequiresApi
-import com.example.liquidglass.LiquidGlassView
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -45,22 +44,16 @@ class ShelfTabBar @JvmOverloads constructor(
     data class Tab(val label: String, val icon: Int, val iconFilled: Int = icon)
 
     private val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-    private val surface = LiquidGlassView(context).apply {
-        enablePressEffect = false
-        enableDynamicBackground = true
-        useShaderPipeline = false
-        enableChromaticAberration = false
-        enableEdgeHighlight = false
-        blurAmount = 0.38f
-        saturation = 105f
-        glassTint = 0x60FAFAFB
-        cornerRadius = dp(100).toFloat()
-    }
-    private val opticalSurface = GlassView(context).takeIf { it.isShaderSupported }?.apply {
-        cornerRadius = dp(28).toFloat()
-        refractionHeight = dp(7).toFloat()
-        refractionAmount = dp(9).toFloat()
-        blurRadius = dp(9).toFloat()
+    /**
+     * 底栏玻璃。液态与磨砂共用这一个 GlassView：磨砂只是把 `frosted` 打开
+     * （内部会把折射归零、模糊抬到 ≥13dp），不再需要两层视图切可见性。
+     * API 33 以下 GlassView 自己画半透明圆角兜底，底栏不会变成透明空洞。
+     */
+    private val surface = GlassView(context).apply {
+        cornerRadius = readerDp(28).toFloat()
+        refractionHeight = readerDp(7).toFloat()
+        refractionAmount = readerDp(9).toFloat()
+        blurRadius = readerDp(9).toFloat()
         tintAlpha = 0.24f
     }
     private val tabs = mutableListOf<LinearLayout>()
@@ -77,6 +70,8 @@ class ShelfTabBar @JvmOverloads constructor(
     private val linear = LinearInterpolator()
     private var motion: ValueAnimator? = null
     private var sourceDirty = true
+    private var skinPale = false
+    private var photoSkin = false
     private var pointer = MotionEvent.INVALID_POINTER_ID
     private var downX = 0f
     private var downY = 0f
@@ -97,9 +92,9 @@ class ShelfTabBar @JvmOverloads constructor(
 
     internal var glassStyle = GlassStyle.LIQUID
         set(value) {
+            if (field == value) return
             field = value
-            surface.blurAmount = if (value == GlassStyle.FROSTED) 0.55f else 0.38f
-            updateSurfaceVisibility()
+            surface.frosted = value == GlassStyle.FROSTED
             invalidate()
         }
 
@@ -136,43 +131,56 @@ class ShelfTabBar @JvmOverloads constructor(
     init {
         // Reserve space inside the view for the lifted lens so HWUI cannot crop its rim.
         clipToPadding = false
-        setPadding(dp(32), dp(32), dp(32), dp(16))
+        setPadding(readerDp(32), readerDp(32), readerDp(32), readerDp(16))
         addView(surface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        opticalSurface?.let { addView(it, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)) }
-        updateSurfaceVisibility()
         addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
-            marginStart = dp(4)
-            marginEnd = dp(4)
+            marginStart = readerDp(4)
+            marginEnd = readerDp(4)
         })
     }
 
-    /** 近白皮肤：只加深底玻璃的染色，不在外层再画一圈边（那圈会落在胶囊之外）。 */
+    /** 近白皮肤：加深染色，否则白玻璃在白底上没有体积。 */
     internal fun setSkinPale(pale: Boolean) {
-        surface.glassTint = if (pale) 0x8CE0E6EE.toInt() else 0x60FAFAFB
+        if (skinPale == pale) return
+        skinPale = pale
+        applySurfaceTint()
         invalidate()
     }
 
-    /** 照片皮肤：降低染色和模糊，让底图能透上来看得出是玻璃。 */
+    /** 照片皮肤：染色和模糊都压低，让底图透出来。 */
     internal fun setPhotoSkin(photo: Boolean) {
-        opticalSurface?.apply {
-            tintAlpha = if (photo) 0.10f else 0.24f
-            blurRadius = dp(if (photo) 4 else 9).toFloat()
-            invalidate()
-        }
-        surface.glassTint = if (photo) 0x33FAFAFB else 0x60FAFAFB
+        if (photoSkin == photo) return
+        photoSkin = photo
+        applySurfaceTint()
         invalidate()
+    }
+
+    /**
+     * 染色优先级：照片皮肤 > 近白皮肤 > 默认。
+     * 两个状态分别由皮肤页和 MainActivity 传入，必须合成一次算，否则后调的那个会把前一个盖掉。
+     */
+    private fun applySurfaceTint() {
+        when {
+            photoSkin -> {
+                surface.tintColor = 0xFFFFFFFF.toInt()
+                surface.tintAlpha = 0.10f
+                surface.blurRadius = readerDp(4).toFloat()
+            }
+            skinPale -> {
+                surface.tintColor = 0xFFE0E6EE.toInt()
+                surface.tintAlpha = 0.55f
+                surface.blurRadius = readerDp(9).toFloat()
+            }
+            else -> {
+                surface.tintColor = 0xFFFFFFFF.toInt()
+                surface.tintAlpha = 0.24f
+                surface.blurRadius = readerDp(9).toFloat()
+            }
+        }
     }
 
     fun setBackdropSource(view: View) {
         surface.backdropSource = view
-        opticalSurface?.backdropSource = view
-    }
-
-    private fun updateSurfaceVisibility() {
-        val optical = opticalSurface ?: return
-        val liquid = glassStyle == GlassStyle.LIQUID
-        optical.visibility = if (liquid) VISIBLE else INVISIBLE
-        surface.visibility = if (liquid) INVISIBLE else VISIBLE
     }
 
     fun setTabs(items: List<Tab>) {
@@ -202,8 +210,8 @@ class ShelfTabBar @JvmOverloads constructor(
                 maxLines = 1
                 gravity = Gravity.CENTER
             }
-            item.addView(icon, LinearLayout.LayoutParams(dp(22), dp(22)))
-            item.addView(label, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(3) })
+            item.addView(icon, LinearLayout.LayoutParams(readerDp(22), readerDp(22)))
+            item.addView(label, LinearLayout.LayoutParams(-2, -2).apply { topMargin = readerDp(3) })
             row.addView(item, LinearLayout.LayoutParams(0, -1, 1f))
             tabs.add(item)
         }
@@ -245,14 +253,14 @@ class ShelfTabBar @JvmOverloads constructor(
             0.025f * trackBounce + 0.058f * trackTapBounce
         val trackScaleY = 1f + lift * (0.027f + 0.026f * abs(trackPullY)) -
             0.018f * trackBounce + 0.072f * trackTapBounce
-        val trackOffsetX = dp(4) * trackPullX * lift
-        val trackOffsetY = dp(4) * trackPullY * lift + dp(2) * trackBounce
+        val trackOffsetX = readerDp(4) * trackPullX * lift
+        val trackOffsetY = readerDp(4) * trackPullY * lift + readerDp(2) * trackBounce
         // Keep the lens under the finger while the track and its labels move beneath it.
         val followsDrag = dragging || lift > 0f
         val centerX = if (followsDrag) trackCenterX + (lensX - trackCenterX - trackOffsetX) / trackScaleX else lensX
         val centerY = if (followsDrag) trackCenterY + (lensY - trackCenterY - trackOffsetY) / trackScaleY else lensY
         val halfWidth = tabWidth * (0.49f + 0.25f * lift) * stretch
-        val halfHeight = ((row.height / 2f - dp(4)) + dp(9) * lift) * (1f - (stretch - 1f) * 0.48f)
+        val halfHeight = ((row.height / 2f - readerDp(4)) + readerDp(9) * lift) * (1f - (stretch - 1f) * 0.48f)
         selection.set(centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight)
         selectionShape.rewind()
         val radius = minOf(halfWidth, halfHeight)
@@ -379,7 +387,7 @@ class ShelfTabBar @JvmOverloads constructor(
         }
 
         val lifted = startLift > 0f
-        val overshootLimit = dp(7).toFloat()
+        val overshootLimit = readerDp(7).toFloat()
         val pulse = if (lifted) 0.15f else if (travel != 0f) 0.41f else 0f
         val trackImpulse = if (lifted && !tapped) 1.25f else 0f
         val tapImpulse = if (tapped) 1f else 0f
@@ -449,7 +457,6 @@ class ShelfTabBar @JvmOverloads constructor(
     private fun isOnTrack(x: Float, y: Float) =
         x >= surface.left && x < surface.right && y >= surface.top && y < surface.bottom
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
     private fun lerp(start: Float, end: Float, amount: Float) = start + (end - start) * amount
 }
 

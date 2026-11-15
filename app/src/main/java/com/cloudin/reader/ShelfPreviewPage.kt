@@ -47,20 +47,19 @@ internal class ShelfPreviewPage(context: Context) : FrameLayout(context) {
 
     private class Cell(val cover: BookCoverView, val label: TextView)
 
-    private fun dp(value: Int) = context.readerDp(value)
 
     init {
-        val margin = dp(22)
+        val margin = readerDp(22)
 
         addView(contentLayer, LayoutParams(-1, -1))
         contentLayer.addView(background, LayoutParams(-1, -1))
-        contentLayer.addView(heading, LayoutParams(dp(240), dp(56), Gravity.TOP or Gravity.START).apply {
+        contentLayer.addView(heading, LayoutParams(readerDp(240), readerDp(56), Gravity.TOP or Gravity.START).apply {
             marginStart = margin
-            topMargin = dp(18)
+            topMargin = readerDp(18)
         })
-        contentLayer.addView(tools, LayoutParams(LayoutParams.WRAP_CONTENT, dp(56), Gravity.TOP or Gravity.END).apply {
+        contentLayer.addView(tools, LayoutParams(LayoutParams.WRAP_CONTENT, readerDp(56), Gravity.TOP or Gravity.END).apply {
             marginEnd = margin
-            topMargin = dp(18)
+            topMargin = readerDp(18)
         })
         listOf("⌕", "＋").forEach { symbol ->
             val bubble = TextView(context).apply {
@@ -71,22 +70,22 @@ internal class ShelfPreviewPage(context: Context) : FrameLayout(context) {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(0x3DFFFFFF)
-                    setStroke(dp(1), 0x59FFFFFF)
+                    setStroke(readerDp(1), 0x59FFFFFF)
                 }
             }
-            tools.addView(bubble, LinearLayout.LayoutParams(dp(40), dp(40)).apply {
-                marginStart = dp(10)
+            tools.addView(bubble, LinearLayout.LayoutParams(readerDp(40), readerDp(40)).apply {
+                marginStart = readerDp(10)
             })
         }
         contentLayer.addView(gridHost, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
-            topMargin = dp(96)
-            bottomMargin = dp(150)
+            topMargin = readerDp(96)
+            bottomMargin = readerDp(150)
             marginStart = margin
             marginEnd = margin
         })
 
-        addView(navHost, LayoutParams(LayoutParams.WRAP_CONTENT, dp(56), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(58)
+        addView(navHost, LayoutParams(LayoutParams.WRAP_CONTENT, readerDp(56), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = readerDp(58)
         })
         buildNav()
     }
@@ -119,18 +118,18 @@ internal class ShelfPreviewPage(context: Context) : FrameLayout(context) {
         navHost.removeAllViews()
         val pill = View(context).apply {
             background = GradientDrawable().apply {
-                cornerRadius = dp(28).toFloat()
+                cornerRadius = readerDp(28).toFloat()
                 // 与设计稿一致：胶囊 23% 白，边缘 72% 白
                 setColor(0x3BFFFFFF)
-                setStroke(dp(1), 0xB8FFFFFF.toInt())
+                setStroke(readerDp(1), 0xB8FFFFFF.toInt())
             }
         }
-        navHost.addView(pill, LayoutParams(dp(280), dp(56)))
+        navHost.addView(pill, LayoutParams(readerDp(280), readerDp(56)))
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        navHost.addView(row, LayoutParams(dp(280), dp(56)))
+        navHost.addView(row, LayoutParams(readerDp(280), readerDp(56)))
         navLabels.clear()
         listOf("书架", "分组", "喜爱", "我的").forEachIndexed { index, text ->
             val label = TextView(context).apply {
@@ -162,14 +161,14 @@ internal class ShelfPreviewPage(context: Context) : FrameLayout(context) {
     }
 
     private fun rebuildIfNeeded() {
-        val availableWidth = width - dp(44)
-        val availableHeight = height - dp(96) - dp(150)
+        val availableWidth = width - readerDp(44)
+        val availableHeight = height - readerDp(96) - readerDp(150)
         if (availableWidth <= 0 || availableHeight <= 0) return
-        val gap = dp(14)
+        val gap = readerDp(14)
         // 列数与真实书架共用 shelfColumns()，格子宽度随列数自适应。
         val nextColumns = shelfColumns(context)
         val actualCell = (availableWidth - gap * (nextColumns - 1)) / nextColumns
-        val cellHeight = (actualCell * 1.36f).toInt() + dp(26)
+        val cellHeight = (actualCell * 1.36f).toInt() + readerDp(26)
         val maxRows = (availableHeight / (cellHeight + gap)).coerceIn(1, 3)
         // 只生成真实藏书需要的格子：书少就少画，不留空白占位，也不补示例书名。
         val nextCellCount = books.size.coerceAtMost(nextColumns * maxRows)
@@ -205,9 +204,9 @@ internal class ShelfPreviewPage(context: Context) : FrameLayout(context) {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     gravity = Gravity.CENTER_HORIZONTAL
                     setTextColor(SkinTheme.meta(darkSkin))
-                    setPadding(0, dp(6), 0, 0)
+                    setPadding(0, readerDp(6), 0, 0)
                 }
-                cell.addView(label, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(26)))
+                cell.addView(label, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, readerDp(26)))
                 cells.add(Cell(cover, label))
                 created++
             }

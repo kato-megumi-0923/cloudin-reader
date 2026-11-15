@@ -971,17 +971,8 @@ class SkinActivity : BaseActivity() {
     }
 
     private fun decodePicked(uri: Uri): Bitmap? = runCatching {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        if (bounds.outWidth <= 0) return null
-        var sample = 1
-        var longest = maxOf(bounds.outWidth, bounds.outHeight)
-        while (longest / 2 >= 2200) {
-            sample *= 2
-            longest /= 2
-        }
-        contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        decodeSampled(2200) { options ->
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         }
     }.getOrNull()
 
@@ -989,8 +980,6 @@ class SkinActivity : BaseActivity() {
         val width = content.width
         return if (width > 0) width else resources.displayMetrics.widthPixels
     }
-
-    private fun rawDp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun rounded(radius: Int, color: Int) = GradientDrawable().apply {
         cornerRadius = readerDp(radius).toFloat()

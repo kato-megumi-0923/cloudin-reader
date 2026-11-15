@@ -79,8 +79,7 @@
     <string name="reader_more_settings">更多设置</string>
     <string name="reader_volume_turns">音量键翻页</string>
     <string name="reader_brightness">亮度</string>
-    <string name="reader_system">系统</string>
-    <string name="reader_follow_system">跟随系统</string>
+    <string name="reader_follow_system">随系统</string>
     <string name="reader_more_backgrounds">更多背景</string>
     <string name="reader_submenu_label">%1$s ›</string>
     <string name="reader_image_description">EPUB 插图</string>

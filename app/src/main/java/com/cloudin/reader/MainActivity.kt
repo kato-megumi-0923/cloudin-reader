@@ -70,7 +70,7 @@ class MainActivity : BaseActivity() {
     private val books = mutableListOf<Book>()
     private val groups = mutableListOf<BookGroup>()
     private var importing = false
-    private var layoutMode = ShelfLayout.GRID
+    private var shelfType = ShelfType.GRID
     private var shelfFormat = ShelfFormat.ALL
     private var currentTab = Tab.SHELF
     private var currentGroup: BookGroup? = null
@@ -131,7 +131,7 @@ class MainActivity : BaseActivity() {
             barLp.bottomMargin = bottom
             bottomBarViewLocal.layoutParams = barLp
             (findViewById<View>(R.id.actionSheet)?.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.let { sheetLp ->
-                sheetLp.bottomMargin = dp(16) + bottom
+                sheetLp.bottomMargin = readerDp(16) + bottom
                 findViewById<View>(R.id.actionSheet)?.layoutParams = sheetLp
             }
         }
@@ -145,8 +145,7 @@ class MainActivity : BaseActivity() {
         btnFormat = findViewById(R.id.btnFormat)
         bottomBarView = findViewById(R.id.bottomBar)
 
-        layoutMode = if (prefs().getString("shelf_layout", "grid") == "list")
-            ShelfLayout.LIST else ShelfLayout.GRID
+        shelfType = ShelfType.load(prefs())
         val savedFormat = prefs().getString("shelf_format", null)
         shelfFormat = ShelfFormat.entries.firstOrNull { it.key == savedFormat } ?: ShelfFormat.ALL
 
@@ -171,8 +170,8 @@ class MainActivity : BaseActivity() {
                     backdropSource = headerBackdrop
                     val horizontalPadding = when (id) {
                         R.id.btnBack, R.id.btnMode, R.id.btnImport -> 0
-                        R.id.btnFormat, R.id.btnSearch -> dp(10)
-                        else -> dp(14)
+                        R.id.btnFormat, R.id.btnSearch -> readerDp(10)
+                        else -> readerDp(14)
                     }
                     textView.setPadding(horizontalPadding, 0, horizontalPadding, 0)
                 }
@@ -198,7 +197,7 @@ class MainActivity : BaseActivity() {
         GlassStyle.load(this).applyTo(root)
 
         adapter = BookshelfAdapter(
-            layoutMode,
+            shelfType,
             onClick = { book -> if (!adapter.selecting) open(book) },
             onLongClick = { book -> if (!adapter.selecting) startSelecting(book) },
             onFavorite = { book -> toggleFavorite(book) },
@@ -216,7 +215,7 @@ class MainActivity : BaseActivity() {
         adapter.onSelectionChanged = { count -> updateSelectionUi(count) }
         recycler.adapter = adapter
         recycler.addOnItemTouchListener(ShelfDragSelection(recycler, adapter))
-        applyLayoutMode()
+        applyShelfType()
 
         findViewById<View>(R.id.btnImport).setGlassClickListener { showAddMenu(it) }
         findViewById<GlassActionButton>(R.id.btnSearch).apply {
@@ -228,7 +227,7 @@ class MainActivity : BaseActivity() {
                 // 走 colorFilter 的图标不在换色路径里，深色皮肤下会一直保持 #222222（黑）。
                 imageTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.shelf_title))
             }
-            addView(icon, android.widget.FrameLayout.LayoutParams(dp(22), dp(22), android.view.Gravity.CENTER))
+            addView(icon, android.widget.FrameLayout.LayoutParams(readerDp(22), readerDp(22), android.view.Gravity.CENTER))
             setGlassClickListener { startActivity(SearchActivity.intent(this@MainActivity)) }
         }
         findViewById<View>(R.id.btnCancelSelect).setGlassClickListener { exitSelecting() }
@@ -236,7 +235,7 @@ class MainActivity : BaseActivity() {
         findViewById<View>(R.id.actGroup).setGlassClickListener(actionSheet) { showGroupPicker() }
         findViewById<View>(R.id.actPin).setGlassClickListener(actionSheet) { pinSelected() }
         findViewById<View>(R.id.actRemove).setGlassClickListener(actionSheet) { deleteSelected() }
-        btnMode.setGlassClickListener { toggleLayout() }
+        btnMode.setGlassClickListener { toggleShelfType() }
         btnFormat.setGlassClickListener { showFormatMenu() }
         btnBack.useBackIcon(getColor(R.color.shelf_title))
         btnBack.setGlassClickListener { closeFolder() }
@@ -287,12 +286,11 @@ class MainActivity : BaseActivity() {
         // 否则皮肤存档已经变了、界面还停在进来之前那张（比如书架还是极光）。
         val storedSkin = SkinStore.load(this)
         if (storedSkin != appliedSkin) applySkin()
-        // 设置页可能改过书架布局与玻璃样式，回来时同步一次（applyTo 幂等）
-        val storedLayout =
-            if (prefs().getString("shelf_layout", "grid") == "list") ShelfLayout.LIST else ShelfLayout.GRID
-        if (storedLayout != layoutMode) {
-            layoutMode = storedLayout
-            applyLayoutMode()
+        // 设置页可能改过书架类型与玻璃样式，回来时同步一次（applyTo 幂等）
+        val storedType = ShelfType.load(prefs())
+        if (storedType != shelfType) {
+            shelfType = storedType
+            applyShelfType()
             recycler.post { refreshBackdrop() }
         }
         findViewById<View?>(R.id.root)?.let { GlassStyle.load(this).applyTo(it) }
@@ -334,7 +332,7 @@ class MainActivity : BaseActivity() {
     private fun setupRecycler() {
         val container = findViewById<FrameLayout>(R.id.container)
         recycler = RecyclerView(this).also { rv ->
-            rv.setPadding(dp(4), dp(6), dp(4), 0)
+            rv.setPadding(readerDp(4), readerDp(6), readerDp(4), 0)
             rv.clipToPadding = false
             rv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
@@ -363,7 +361,7 @@ class MainActivity : BaseActivity() {
             content.updateLayoutParams<FrameLayout.LayoutParams> { topMargin = contentTop }
         }
         // Reserve space at the start of the list, but let books scroll through that space.
-        val paddingTop = dp(6) + if (floatingHeader) headerHeight else 0
+        val paddingTop = readerDp(6) + if (floatingHeader) headerHeight else 0
         if (recycler.paddingTop != paddingTop) {
             val atStart = !recycler.canScrollVertically(-1)
             recycler.setPadding(recycler.paddingLeft, paddingTop, recycler.paddingRight, recycler.paddingBottom)
@@ -375,7 +373,7 @@ class MainActivity : BaseActivity() {
     }
 
     private fun updateHeaderTitle() {
-        val fadeDistance = dp(32).coerceAtLeast(1)
+        val fadeDistance = readerDp(32).coerceAtLeast(1)
         val offset = if (hasFloatingHeader() && ::adapter.isInitialized && !adapter.selecting) {
             val manager = recycler.layoutManager as? LinearLayoutManager
             val first = manager?.findViewByPosition(0)
@@ -389,7 +387,7 @@ class MainActivity : BaseActivity() {
         }
         val progress = (offset.toFloat() / fadeDistance).coerceIn(0f, 1f)
         title.alpha = 1f - progress
-        title.translationY = -dp(14) * progress
+        title.translationY = -readerDp(14) * progress
         title.visibility = if (progress == 1f) View.INVISIBLE else View.VISIBLE
     }
 
@@ -412,27 +410,25 @@ class MainActivity : BaseActivity() {
         super.onConfigurationChanged(newConfig)
         // 跟随系统时，系统切深浅色会走到这里
         if (NightMode.apply(this)) reload()
-        applyLayoutMode()
+        applyShelfType()
         recycler.post { refreshBackdrop() }
     }
 
-    private fun applyLayoutMode() {
-        if (layoutMode == ShelfLayout.LIST) {
+    private fun applyShelfType() {
+        if (shelfType == ShelfType.LIST) {
             recycler.layoutManager = LinearLayoutManager(this)
             btnMode.text = "▦"
         } else {
             recycler.layoutManager = GridLayoutManager(this, gridSpanCount())
             btnMode.text = "☰"
         }
-        adapter.setLayout(layoutMode)
+        adapter.setShelfType(shelfType)
     }
 
-    private fun toggleLayout() {
-        layoutMode = if (layoutMode == ShelfLayout.GRID) ShelfLayout.LIST else ShelfLayout.GRID
-        prefs().edit().putString(
-            "shelf_layout", if (layoutMode == ShelfLayout.LIST) "list" else "grid"
-        ).apply()
-        applyLayoutMode()
+    private fun toggleShelfType() {
+        shelfType = if (shelfType == ShelfType.GRID) ShelfType.LIST else ShelfType.GRID
+        ShelfType.save(prefs(), shelfType)
+        applyShelfType()
     }
 
     private fun switchTab(tab: Tab) {
@@ -667,7 +663,7 @@ class MainActivity : BaseActivity() {
 
     private fun animateFolderSwitch(entering: Boolean) {
         val rv = recycler
-        val offset = dp(24).toFloat()
+        val offset = readerDp(24).toFloat()
         rv.animate().cancel()
         rv.animate().alpha(0f).translationX(if (entering) -offset else offset).setDuration(90)
             .withEndAction {
@@ -686,13 +682,13 @@ class MainActivity : BaseActivity() {
     ) {
         // 背景交给 AGSL 着色器画，content 只保留很小的白色蒙版保证文字可读
         content.background = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = dp(26).toFloat()
+            cornerRadius = readerDp(26).toFloat()
             setColor(0x2EFFFFFF)
         }
         val pale = SkinStore.load(this).pale
         val glass = GlassView(this).apply {
-            cornerRadius = dp(26).toFloat()
-            blurRadius = dp(11).toFloat()
+            cornerRadius = readerDp(26).toFloat()
+            blurRadius = readerDp(11).toFloat()
             tintColor = if (pale) 0xFFDDE4ED.toInt() else 0xFFFFFFFF.toInt()
             tintAlpha = if (pale) 0.46f else 0.10f
             dispersion = 0.16f
@@ -711,8 +707,8 @@ class MainActivity : BaseActivity() {
         dialog.window?.setWindowAnimations(windowAnimations)
         dialog.show()
         val width = widthDp?.let {
-            minOf(dp(it), (findViewById<View>(R.id.root).width - dp(32)).coerceAtLeast(1))
-        } ?: dp(345)
+            minOf(readerDp(it), (findViewById<View>(R.id.root).width - readerDp(32)).coerceAtLeast(1))
+        } ?: readerDp(345)
         dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setGravity(Gravity.CENTER)
         val backdrop = findViewById<View>(R.id.root)
@@ -859,15 +855,15 @@ class MainActivity : BaseActivity() {
         }
         (rows.getChildAt(rows.childCount - 1) as? View)?.let { confirmRow ->
             confirmRow.background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(22).toFloat()
+                cornerRadius = readerDp(22).toFloat()
                 setColor(0x24C0442E)
             }
             confirmRow.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)
+                LinearLayout.LayoutParams.MATCH_PARENT, readerDp(54)
             ).apply {
-                marginStart = dp(16)
-                marginEnd = dp(16)
-                topMargin = dp(4)
+                marginStart = readerDp(16)
+                marginEnd = readerDp(16)
+                topMargin = readerDp(4)
             }
             confirmRow.findViewById<TextView>(R.id.cardRowText)?.apply {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -883,7 +879,7 @@ class MainActivity : BaseActivity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2); bottomMargin = dp(8) }
+            ).apply { topMargin = readerDp(2); bottomMargin = readerDp(8) }
         )
         content.findViewById<View>(R.id.cardCancel).setGlassClickListener { dialog.dismiss() }
         showCard(dialog, content)
@@ -920,7 +916,7 @@ class MainActivity : BaseActivity() {
                 setTextColor(getColor(R.color.ink_soft))
                 textSize = 13f
                 gravity = android.view.Gravity.CENTER
-                setPadding(0, dp(8), 0, dp(8))
+                setPadding(0, readerDp(8), 0, readerDp(8))
             }
             list.addView(hint)
         }
@@ -1007,7 +1003,7 @@ class MainActivity : BaseActivity() {
         bar.resetGlassPressMotion()
         bar.animate().cancel()
         bar.alpha = 0f
-        bar.translationY = dp(24).toFloat()
+        bar.translationY = readerDp(24).toFloat()
         bar.scaleX = 0.94f
         bar.scaleY = 0.94f
         bar.visibility = View.VISIBLE
@@ -1132,9 +1128,9 @@ class MainActivity : BaseActivity() {
                         }
                         addCardRow(content, "${receipt.name} · $state", color, clickable = false)
                     }
-                    val maxRows = (findViewById<View>(R.id.root).height * 0.42f).toInt().coerceAtLeast(dp(56))
+                    val maxRows = (findViewById<View>(R.id.root).height * 0.42f).toInt().coerceAtLeast(readerDp(56))
                     scroll.measure(
-                        View.MeasureSpec.makeMeasureSpec(dp(360), View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(readerDp(360), View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                     )
                     scroll.updateLayoutParams<LinearLayout.LayoutParams> {
@@ -1239,8 +1235,8 @@ class MainActivity : BaseActivity() {
         }
         val isRtl = actions.layoutDirection == View.LAYOUT_DIRECTION_RTL
         panel.updateLayoutParams<FrameLayout.LayoutParams> {
-            topMargin = findViewById<View>(R.id.header).bottom + dp(6)
-            marginEnd = dp(8) + if (isRtl) anchor.left else actions.width - anchor.right
+            topMargin = findViewById<View>(R.id.header).bottom + readerDp(6)
+            marginEnd = readerDp(8) + if (isRtl) anchor.left else actions.width - anchor.right
         }
         val rows = findViewById<LinearLayout>(R.id.menuRows)
         rows.removeAllViews()
@@ -1250,7 +1246,7 @@ class MainActivity : BaseActivity() {
             tv.text = if (tv.isSelected) getString(R.string.checked_choice_label, label) else label
             tv.textSize = 13f
             tv.setTextColor(getColor(R.color.shelf_title))
-            val v = dp(13)
+            val v = readerDp(13)
             tv.setPadding(v, v, v, v)
             tv.isClickable = true
             tv.setGlassClickListener {
@@ -1268,8 +1264,8 @@ class MainActivity : BaseActivity() {
                 divider.setBackgroundColor(0x1F000000)
                 rows.addView(divider, LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(1)
-                ).apply { marginStart = dp(13); marginEnd = dp(13) })
+                    readerDp(1)
+                ).apply { marginStart = readerDp(13); marginEnd = readerDp(13) })
             }
         }
         scrim.isEnabled = true
@@ -1280,7 +1276,7 @@ class MainActivity : BaseActivity() {
         panel.alpha = 0f
         panel.scaleX = 0.80f
         panel.scaleY = 0.80f
-        panel.translationY = -dp(20).toFloat()
+        panel.translationY = -readerDp(20).toFloat()
         panel.post {
             if (panel.visibility != View.VISIBLE || !scrim.isEnabled) return@post
             panel.pivotX = if (isRtl) 0f else panel.width.toFloat()
@@ -1308,7 +1304,7 @@ class MainActivity : BaseActivity() {
             .alpha(0f)
             .scaleX(0.88f)
             .scaleY(0.88f)
-            .translationY(-dp(12).toFloat())
+            .translationY(-readerDp(12).toFloat())
             .setDuration(180)
             .setUpdateListener { panel.invalidate() }
             .withEndAction {
@@ -1567,5 +1563,4 @@ class MainActivity : BaseActivity() {
         }.getOrNull()
     }
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 }

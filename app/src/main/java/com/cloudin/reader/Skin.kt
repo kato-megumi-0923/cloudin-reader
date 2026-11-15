@@ -5,7 +5,6 @@ import com.cloudin.refract.GlassView
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -159,24 +158,9 @@ internal object SkinStore {
 
     private const val MAX_PHOTOS = 24
 
-    fun decode(path: String, maxDimension: Int = 1600): Bitmap? = runCatching {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-        var sample = 1
-        var longest = maxOf(bounds.outWidth, bounds.outHeight)
-        while (longest / 2 >= maxDimension && sample < 8) {
-            sample *= 2
-            longest /= 2
-        }
-        BitmapFactory.decodeFile(
-            path,
-            BitmapFactory.Options().apply {
-                inSampleSize = sample
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-        )
-    }.getOrNull()
+    /** 照片皮肤用的解码：最大边 1600、inSampleSize 最多 8，避免超大图吃掉内存。 */
+    fun decode(path: String, maxDimension: Int = 1600): Bitmap? =
+        decodeSampledFile(path, maxDimension, limit = 8)
 
     private var cachedPath: String? = null
     private var cachedBitmap: Bitmap? = null
@@ -229,24 +213,8 @@ internal object SkinStore {
         }
     }
 
-    fun measuredDark(bitmap: Bitmap): Boolean {
-        val stepX = maxOf(1, bitmap.width / 24)
-        val stepY = maxOf(1, bitmap.height / 24)
-        var total = 0.0
-        var count = 0
-        var y = 0
-        while (y < bitmap.height) {
-            var x = 0
-            while (x < bitmap.width) {
-                val pixel = bitmap.getPixel(x, y)
-                total += 0.2126 * Color.red(pixel) + 0.7152 * Color.green(pixel) + 0.0722 * Color.blue(pixel)
-                count++
-                x += stepX
-            }
-            y += stepY
-        }
-        return count > 0 && total / count < 112.0
-    }
+    /** 照片整体偏暗时用浅色文字。 */
+    fun measuredDark(bitmap: Bitmap): Boolean = averageLuminance(bitmap, 24) < 112.0
 }
 
 /**
@@ -403,7 +371,7 @@ internal object SkinTheme {
                 root.tintAlpha = maxOf(root.tintAlpha, 0.34f)
                 root.foreground = android.graphics.drawable.GradientDrawable().apply {
                     cornerRadius = radius
-                    setStroke(dp(root, 1), 0x3D1A2430)
+                    setStroke(root.readerDp(1), 0x3D1A2430)
                     setColor(android.graphics.Color.TRANSPARENT)
                 }
             } else {
@@ -419,9 +387,6 @@ internal object SkinTheme {
             for (index in 0 until root.childCount) applyGlassEdge(root.getChildAt(index), pale)
         }
     }
-
-    private fun dp(view: View, value: Int): Int =
-        (value * view.resources.displayMetrics.density + 0.5f).toInt()
 
     /**
      * 找出颜色属于哪个语义槽位（0..5）。

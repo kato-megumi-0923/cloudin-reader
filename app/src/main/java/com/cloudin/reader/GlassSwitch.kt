@@ -40,12 +40,12 @@ class GlassSwitch @JvmOverloads constructor(
     private val track = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(1f)
+        strokeWidth = readerDpF(1f)
     }
     private val thumb = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val thumbRim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(0.5f)
+        strokeWidth = readerDpF(0.5f)
         color = 0x22000000
     }
 
@@ -70,7 +70,7 @@ class GlassSwitch @JvmOverloads constructor(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(dp(46f).toInt(), dp(28f).toInt())
+        setMeasuredDimension(readerDpF(46f).toInt(), readerDpF(28f).toInt())
     }
 
     private fun animateTo(target: Float) {
@@ -98,7 +98,7 @@ class GlassSwitch @JvmOverloads constructor(
         rim.color = if (dark) 0x40FFFFFF else 0x26000000
         canvas.drawRoundRect(RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), radius, radius, rim)
 
-        val pad = dp(3f)
+        val pad = readerDpF(3f)
         val d = h - pad * 2
         val left = pad + (w - pad * 2 - d) * progress
         val box = RectF(left, pad, left + d, pad + d)
@@ -114,7 +114,6 @@ class GlassSwitch @JvmOverloads constructor(
         return Color.argb(a, r, g, b)
     }
 
-    private fun dp(value: Float) = value * resources.displayMetrics.density
 }
 
 /**
@@ -142,7 +141,7 @@ class RadioDot @JvmOverloads constructor(
     private var progress = 0f
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(2f)
+        strokeWidth = readerDpF(2f)
     }
     private val inner = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -170,13 +169,13 @@ class RadioDot @JvmOverloads constructor(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(dp(20f).toInt(), dp(20f).toInt())
+        setMeasuredDimension(readerDpF(20f).toInt(), readerDpF(20f).toInt())
     }
 
     override fun onDraw(canvas: Canvas) {
         val cx = width / 2f
         val cy = height / 2f
-        val stroke = dp(2f)
+        val stroke = readerDpF(2f)
         val radius = minOf(cx, cy) - stroke / 2f
         ring.color = blend(if (dark) idleDark else idleLight, accent, progress)
         canvas.drawCircle(cx, cy, radius, ring)
@@ -194,5 +193,4 @@ class RadioDot @JvmOverloads constructor(
         return Color.argb(a, r, g, b)
     }
 
-    private fun dp(value: Float) = value * resources.displayMetrics.density
 }

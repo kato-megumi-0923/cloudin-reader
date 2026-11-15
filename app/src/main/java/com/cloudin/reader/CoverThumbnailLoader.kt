@@ -4,13 +4,11 @@ import android.content.Context
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.util.LruCache
 import java.util.concurrent.Executors
-import kotlin.math.roundToInt
 
 /** Decodes covers off the UI thread and shares sized thumbnails between views. */
 internal object CoverThumbnailLoader {
@@ -61,11 +59,11 @@ internal object CoverThumbnailLoader {
     fun cached(key: Key): Result? = cache.get(key)
 
     fun load(key: Key, callback: (Result) -> Unit): Request = load(key, callback) {
-        decode(key.maxEdge) { BitmapFactory.decodeFile(key.path, it) }
+        decodeSampled(key.maxEdge, scaleToFit = true) { BitmapFactory.decodeFile(key.path, it) }
     }
 
     fun loadResource(resources: Resources, key: Key, callback: (Result) -> Unit): Request = load(key, callback) {
-        decode(key.maxEdge) { BitmapFactory.decodeResource(resources, key.resourceId, it) }
+        decodeSampled(key.maxEdge, scaleToFit = true) { BitmapFactory.decodeResource(resources, key.resourceId, it) }
     }
 
     private fun load(key: Key, callback: (Result) -> Unit, decode: () -> Bitmap?): Request {
@@ -103,36 +101,6 @@ internal object CoverThumbnailLoader {
         return request
     }
 
-    private fun decode(maxEdge: Int, source: (BitmapFactory.Options) -> Bitmap?): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true; inScaled = false }
-        source(bounds)
-        val longest = maxOf(bounds.outWidth, bounds.outHeight)
-        if (longest <= 0) return null
-        var sample = 1
-        while (longest / 2 / sample >= maxEdge) sample *= 2
-        val bitmap = source(BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-            inScaled = false
-        }) ?: return null
-        val edge = maxOf(bitmap.width, bitmap.height)
-        if (edge <= maxEdge) return bitmap
-        val scale = maxEdge.toFloat() / edge
-        val thumbnail = Bitmap.createScaledBitmap(bitmap,
-            (bitmap.width * scale).roundToInt().coerceAtLeast(1),
-            (bitmap.height * scale).roundToInt().coerceAtLeast(1), true)
-        if (thumbnail !== bitmap) bitmap.recycle()
-        return thumbnail
-    }
-
-    fun sampleLight(bitmap: Bitmap): Boolean {
-        var sum = 0.0
-        for (y in 0 until 12) {
-            for (x in 0 until 12) {
-                val pixel = bitmap.getPixel(x * bitmap.width / 12, y * bitmap.height / 12)
-                sum += 0.2126 * Color.red(pixel) + 0.7152 * Color.green(pixel) + 0.0722 * Color.blue(pixel)
-            }
-        }
-        return sum / (255 * 144) > 0.55
-    }
+    /** 封面上要不要用深色文字：平均亮度超过 55% 算浅封面。 */
+    fun sampleLight(bitmap: Bitmap): Boolean = averageLuminance(bitmap, 12) > 0.55 * 255
 }

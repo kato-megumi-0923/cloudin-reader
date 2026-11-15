@@ -18,7 +18,6 @@ import android.widget.TextView
  */
 internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
 
-    private fun dp(value: Int) = context.readerDp(value)
 
     private val heading: TextView
     private val toolRow: LinearLayout
@@ -43,18 +42,18 @@ internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
             setTextColor(SkinTheme.title(false))
             gravity = Gravity.CENTER_VERTICAL
         }
-        addView(heading, LayoutParams(dp(120), dp(26), Gravity.TOP or Gravity.START).apply {
-            marginStart = dp(16)
-            topMargin = dp(14)
+        addView(heading, LayoutParams(readerDp(120), readerDp(26), Gravity.TOP or Gravity.START).apply {
+            marginStart = readerDp(16)
+            topMargin = readerDp(14)
         })
 
         toolRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        addView(toolRow, LayoutParams(LayoutParams.WRAP_CONTENT, dp(26), Gravity.TOP or Gravity.END).apply {
-            marginEnd = dp(16)
-            topMargin = dp(14)
+        addView(toolRow, LayoutParams(LayoutParams.WRAP_CONTENT, readerDp(26), Gravity.TOP or Gravity.END).apply {
+            marginEnd = readerDp(16)
+            topMargin = readerDp(14)
         })
         listOf("⌕", "＋").forEach { symbol ->
             val bubble = TextView(context).apply {
@@ -65,40 +64,40 @@ internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(0x3DFFFFFF)
-                    setStroke(dp(1), 0x59FFFFFF)
+                    setStroke(readerDp(1), 0x59FFFFFF)
                 }
             }
-            toolRow.addView(bubble, LinearLayout.LayoutParams(dp(20), dp(20)).apply {
-                marginStart = dp(6)
+            toolRow.addView(bubble, LinearLayout.LayoutParams(readerDp(20), readerDp(20)).apply {
+                marginStart = readerDp(6)
             })
         }
 
         grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         addView(grid, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
-            topMargin = dp(46)
-            bottomMargin = dp(58)
-            marginStart = dp(16)
-            marginEnd = dp(16)
+            topMargin = readerDp(46)
+            bottomMargin = readerDp(58)
+            marginStart = readerDp(16)
+            marginEnd = readerDp(16)
         })
 
         navHost = FrameLayout(context)
-        addView(navHost, LayoutParams(LayoutParams.WRAP_CONTENT, dp(34), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(14)
+        addView(navHost, LayoutParams(LayoutParams.WRAP_CONTENT, readerDp(34), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = readerDp(14)
         })
 
         val pill = FrameLayout(context).apply {
             background = GradientDrawable().apply {
-                cornerRadius = dp(17).toFloat()
+                cornerRadius = readerDp(17).toFloat()
                 setColor(0x47FFFFFF)
-                setStroke(dp(1), 0x66FFFFFF)
+                setStroke(readerDp(1), 0x66FFFFFF)
             }
         }
-        navHost.addView(pill, LayoutParams(dp(196), dp(34)))
+        navHost.addView(pill, LayoutParams(readerDp(196), readerDp(34)))
         val labels = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        navHost.addView(labels, LayoutParams(dp(196), dp(34)))
+        navHost.addView(labels, LayoutParams(readerDp(196), readerDp(34)))
         listOf("书架", "分组", "喜爱", "我的").forEachIndexed { index, text ->
             val label = TextView(context).apply {
                 setText(text)
@@ -124,12 +123,12 @@ internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
                 gravity = Gravity.CENTER_VERTICAL
             }
             grid.addView(rowView, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
-                if (row < rows - 1) bottomMargin = dp(10)
+                if (row < rows - 1) bottomMargin = readerDp(10)
             })
             for (column in 0 until columns) {
                 val cell = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
                 rowView.addView(cell, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply {
-                    if (column < columns - 1) marginEnd = dp(8)
+                    if (column < columns - 1) marginEnd = readerDp(8)
                 })
                 val cover = BookCoverView(context)
                 cell.addView(cover, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
@@ -139,9 +138,9 @@ internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     gravity = Gravity.CENTER_HORIZONTAL
                     setTextColor(SkinTheme.meta(false))
-                    setPadding(0, dp(3), 0, 0)
+                    setPadding(0, readerDp(3), 0, 0)
                 }
-                cell.addView(label, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(12)))
+                cell.addView(label, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, readerDp(12)))
                 cells.add(Cell(cover, label))
             }
         }
@@ -159,8 +158,8 @@ internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
         backdrop = source
         navHost.removeAllViews()
         val glass = GlassView(context).apply {
-            cornerRadius = dp(17).toFloat()
-            blurRadius = dp(9).toFloat()
+            cornerRadius = readerDp(17).toFloat()
+            blurRadius = readerDp(9).toFloat()
             tintColor = Color.WHITE
             tintAlpha = 0.16f
             dispersion = 0.14f
@@ -168,12 +167,12 @@ internal class ShelfPreviewLayout(context: Context) : FrameLayout(context) {
             backdropSource = source
             frosted = GlassStyle.load(context) == GlassStyle.FROSTED
         }
-        navHost.addView(glass, LayoutParams(dp(196), dp(34)))
+        navHost.addView(glass, LayoutParams(readerDp(196), readerDp(34)))
         val labels = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        navHost.addView(labels, LayoutParams(dp(196), dp(34)))
+        navHost.addView(labels, LayoutParams(readerDp(196), readerDp(34)))
         navLabels.forEach { label ->
             (label.parent as? android.view.ViewGroup)?.removeView(label)
             labels.addView(label, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))

@@ -37,7 +37,6 @@
 
         <com.cloudin.reader.GlassActionButton
             android:id="@+id/backBar"
-            app:glassMaterial="regular"
             android:layout_width="46dp"
             android:layout_height="46dp" />
 
@@ -46,9 +45,7 @@
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:layout_marginStart="8dp"
-            app:cornerRadius="22dp"
-
-            app:glassMaterial="regular">
+            app:cornerRadius="22dp">
 
             <LinearLayout
                 android:layout_width="wrap_content"
@@ -88,7 +85,6 @@
 
         <com.cloudin.reader.GlassActionButton
             android:id="@+id/btnMenu"
-            app:glassMaterial="regular"
             android:layout_width="46dp"
             android:layout_height="46dp" />
     </LinearLayout>
@@ -107,7 +103,6 @@
             android:id="@+id/settingsPanel"
             app:cornerRadius="24dp"
 
-            app:glassMaterial="regular"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
@@ -122,8 +117,7 @@
             android:layout_height="54dp"
             android:layout_gravity="center_horizontal"
             android:layout_marginBottom="14dp"
-            app:cornerRadius="27dp"
-            app:glassMaterial="regular">
+            app:cornerRadius="27dp">
 
             <LinearLayout
                 android:layout_width="wrap_content"

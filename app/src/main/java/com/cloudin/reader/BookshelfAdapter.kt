@@ -1,5 +1,6 @@
 package com.cloudin.reader
 
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
@@ -8,10 +9,35 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
-enum class ShelfLayout { GRID, LIST }
+/**
+ * 书架的陈列方式：网格 / 列表。
+ *
+ * 和「书架布局」（层板、书脊这类视觉排布）是两个维度，后者见 ShelfStyle。
+ */
+enum class ShelfType {
+    GRID, LIST;
+
+    companion object {
+        private const val KEY = "shelf_type"
+        private const val LEGACY_KEY = "shelf_layout"
+
+        /** 老版本存的是 `shelf_layout`，先读新 key 再回退旧 key，升级后书架不会跳回网格。 */
+        fun load(prefs: SharedPreferences): ShelfType {
+            val saved = prefs.getString(KEY, null) ?: prefs.getString(LEGACY_KEY, null)
+            return if (saved == "list") LIST else GRID
+        }
+
+        fun save(prefs: SharedPreferences, type: ShelfType) {
+            prefs.edit()
+                .putString(KEY, if (type == LIST) "list" else "grid")
+                .remove(LEGACY_KEY)
+                .apply()
+        }
+    }
+}
 
 class BookshelfAdapter(
-    private var layout: ShelfLayout,
+    private var type: ShelfType,
     private val onClick: (Book) -> Unit,
     private val onLongClick: (Book) -> Unit,
     private val onFavorite: (Book) -> Unit,
@@ -55,9 +81,9 @@ class BookshelfAdapter(
         notifyDataSetChanged()
     }
 
-    fun setLayout(newLayout: ShelfLayout) {
-        if (layout == newLayout) return
-        layout = newLayout
+    fun setShelfType(newType: ShelfType) {
+        if (type == newType) return
+        type = newType
         notifyDataSetChanged()
     }
 
@@ -147,7 +173,7 @@ class BookshelfAdapter(
 
     override fun getItemViewType(position: Int): Int {
         if (isFolder(position)) return 10
-        return if (layout == ShelfLayout.LIST) 2 else 1
+        return if (type == ShelfType.LIST) 2 else 1
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {

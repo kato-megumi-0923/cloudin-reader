@@ -51,7 +51,7 @@ class SearchActivity : BaseActivity() {
         }
         val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val back = glassBackButton(ink, backdrop, paper) { finish() }
-        toolbar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(10) })
+        toolbar.addView(back, LinearLayout.LayoutParams(readerDp(44), readerDp(44)).apply { marginStart = readerDp(10) })
 
         input = EditText(this).apply {
             hint = "搜索书名 / 作者"
@@ -61,7 +61,7 @@ class SearchActivity : BaseActivity() {
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             background = rounded(chipBg, 20)
-            setPadding(dp(16), 0, dp(16), 0)
+            setPadding(readerDp(16), 0, readerDp(16), 0)
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                     submitQuery(text.toString())
@@ -81,18 +81,18 @@ class SearchActivity : BaseActivity() {
                 }
             }
         })
-        toolbar.addView(input, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-            marginStart = dp(4)
-            marginEnd = dp(16)
+        toolbar.addView(input, LinearLayout.LayoutParams(0, readerDp(44), 1f).apply {
+            marginStart = readerDp(4)
+            marginEnd = readerDp(16)
         })
-        root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(56)))
+        root.addView(toolbar, LinearLayout.LayoutParams(-1, readerDp(56)))
 
         // 搜索记录
         historyBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val historyHead = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(6), dp(16), dp(6))
+            setPadding(readerDp(16), readerDp(6), readerDp(16), readerDp(6))
         }
         historyHead.addView(label("最近搜索", 12f, muted), LinearLayout.LayoutParams(0, -2, 1f))
         val clear = label("清除记录", 12f, accent).apply {
@@ -108,7 +108,7 @@ class SearchActivity : BaseActivity() {
         }
         historyRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(12), 0, dp(12), dp(8))
+            setPadding(readerDp(12), 0, readerDp(12), readerDp(8))
         }
         scroll.addView(historyRow)
         historyBlock.addView(scroll)
@@ -122,7 +122,7 @@ class SearchActivity : BaseActivity() {
             layoutManager = GridLayoutManager(this@SearchActivity, gridSpanCount())
             adapter = this@SearchActivity.adapter
             clipToPadding = false
-            setPadding(dp(10), dp(4), dp(10), dp(16))
+            setPadding(readerDp(10), readerDp(4), readerDp(10), readerDp(16))
             visibility = View.GONE
         }
         val body = FrameLayout(this)
@@ -195,14 +195,14 @@ class SearchActivity : BaseActivity() {
             historyRow.addView(
                 label(term, 13f, ink).apply {
                     background = rounded(chipBg, 16)
-                    setPadding(dp(12), dp(7), dp(12), dp(7))
+                    setPadding(readerDp(12), readerDp(7), readerDp(12), readerDp(7))
                     setOnClickListener {
                         input.setText(term)
                         input.setSelection(term.length)
                         submitQuery(term)
                     }
                 },
-                LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) }
+                LinearLayout.LayoutParams(-2, -2).apply { marginEnd = readerDp(8) }
             )
         }
     }
@@ -231,7 +231,7 @@ class SearchActivity : BaseActivity() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ResultHolder {
             val cell = LinearLayout(this@SearchActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(6), dp(6), dp(6), dp(6))
+                setPadding(readerDp(6), readerDp(6), readerDp(6), readerDp(6))
             }
             val cover = BookCoverView(this@SearchActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(-1, -2)
@@ -241,7 +241,7 @@ class SearchActivity : BaseActivity() {
                 setTextColor(ink)
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(2), dp(6), dp(2), 0)
+                setPadding(readerDp(2), readerDp(6), readerDp(2), 0)
             }
             cell.addView(cover)
             cell.addView(title)
@@ -273,7 +273,7 @@ class SearchActivity : BaseActivity() {
 
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
-        cornerRadius = dp(radius).toFloat()
+        cornerRadius = readerDp(radius).toFloat()
     }
 
     /** 与书架同一套列数算法：按屏幕宽度算，平板 8 列、手机 4 列。 */
@@ -282,7 +282,6 @@ class SearchActivity : BaseActivity() {
         return (widthDp / 114).coerceIn(4, 12)
     }
 
-    private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 
     companion object {
         const val EXTRA_QUERY = "query"

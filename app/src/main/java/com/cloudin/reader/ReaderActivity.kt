@@ -127,7 +127,7 @@ class ReaderActivity : BaseActivity() {
         settingsPanel = findViewById(R.id.settingsPanel)
         rootView.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
             if (r - l != or - ol || b - t != ob - ot) {
-                val width = minOf(dp(if (r - l > b - t) 500 else 470), (r - l - dp(28)).coerceAtLeast(1))
+                val width = minOf(readerDp(if (r - l > b - t) 500 else 470), (r - l - readerDp(28)).coerceAtLeast(1))
                 settingsPanel.layoutParams = settingsPanel.layoutParams.apply { this.width = width }
                 if (panelSection == Panel.SETTINGS) showSettings(Panel.SETTINGS, refresh = true)
             }
@@ -321,7 +321,6 @@ class ReaderActivity : BaseActivity() {
         }
     }
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun toggleBars() {
         // 搜索态用自带的顶部/底部条，不再叠加常规工具栏
@@ -409,7 +408,7 @@ class ReaderActivity : BaseActivity() {
         settingsPanel.removeAllViews()
         val scroll = object : ScrollView(this) {
             override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-                val safeHeight = (pageView.height * 0.62f).toInt().coerceAtLeast(dp(120))
+                val safeHeight = (pageView.height * 0.62f).toInt().coerceAtLeast(readerDp(120))
                 val maxHeight = if (MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED) safeHeight
                     else minOf(safeHeight, MeasureSpec.getSize(heightSpec))
                 super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST))
@@ -420,9 +419,9 @@ class ReaderActivity : BaseActivity() {
         }
         settingsPanel.addView(scroll, FrameLayout.LayoutParams(-1, -2))
         settingsPanel.visibility = View.VISIBLE
-        settingsPanel.translationY = if (opening) dp(22).toFloat() else 0f
+        settingsPanel.translationY = if (opening) readerDp(22).toFloat() else 0f
         scroll.alpha = if (refresh) 1f else 0f
-        scroll.translationX = if (opening || refresh) 0f else dp(18).toFloat() * if (section == Panel.SETTINGS) -1 else 1
+        scroll.translationX = if (opening || refresh) 0f else readerDp(18).toFloat() * if (section == Panel.SETTINGS) -1 else 1
         if (!opening && !refresh && previousHeight > 0) {
             scroll.measure(
                 View.MeasureSpec.makeMeasureSpec(
@@ -464,9 +463,12 @@ class ReaderActivity : BaseActivity() {
         }
         val level = brightness.getChildAt(1)
         val levelText = brightness.getChildAt(2) as TextView
+        // 勾选框本身已经写了「随系统」，这里再显示「系统」就重复了；留空但要占位，
+        // 否则滑块宽度会跟着跳。
+        levelText.minWidth = readerDp(34)
         fun updateBrightnessState(checked: Boolean) {
             level.isEnabled = !checked
-            levelText.text = if (checked) getString(R.string.reader_system) else "${ReaderPrefs.brightness(this@ReaderActivity)}%"
+            levelText.text = if (checked) "" else "${ReaderPrefs.brightness(this@ReaderActivity)}%"
         }
         brightness.addView(settingCheck(getString(R.string.reader_follow_system), followSystem) {
             ReaderPrefs.setFollowsBrightness(this@ReaderActivity, it)
@@ -477,7 +479,7 @@ class ReaderActivity : BaseActivity() {
         addView(brightness, rowParams())
 
         val fontRow = controlRow()
-        fontRow.addView(readerLabel(getString(R.string.reader_font_size), ReaderPrefs.softInk(theme), 13f), LinearLayout.LayoutParams(dp(44), -1))
+        fontRow.addView(readerLabel(getString(R.string.reader_font_size), ReaderPrefs.softInk(theme), 13f), LinearLayout.LayoutParams(readerDp(44), -1))
         val stepper = controlRow().apply {
             background = readerPill(if (ReaderPrefs.palette(theme).dark) 0x20FFFFFF else 0x1B473315)
         }
@@ -493,12 +495,12 @@ class ReaderActivity : BaseActivity() {
         stepper.addView(panelButton("＋") { changeFont(1) }, weighted())
         fontRow.addView(stepper, weighted())
         fontRow.addView(panelButton(getString(R.string.reader_submenu_label, getString(R.string.reader_font_settings)), R.id.readerSettingFont) { showSettings(Panel.FONT) },
-            weighted().apply { marginStart = dp(8) })
+            weighted().apply { marginStart = readerDp(8) })
         addView(fontRow, rowParams())
 
         val themes = listOf(ReaderPrefs.THEME_PURE_WHITE, ReaderPrefs.THEME_NIGHT, ReaderPrefs.THEME_BLACK,
             ReaderPrefs.THEME_GREEN, ReaderPrefs.THEME_PAPER, ReaderPrefs.THEME_WOOD)
-        val narrow = settingsPanel.layoutParams.width in 1 until dp(400)
+        val narrow = settingsPanel.layoutParams.width in 1 until readerDp(400)
         val swatchRow = controlRow()
         themes.forEach { id ->
             val frame = FrameLayout(this@ReaderActivity)
@@ -511,10 +513,10 @@ class ReaderActivity : BaseActivity() {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(palette.paper)
-                    setStroke(dp(if (selected) 2 else 1), if (selected) ReaderPrefs.ink(theme) else 0x33444444)
+                    setStroke(readerDp(if (selected) 2 else 1), if (selected) ReaderPrefs.ink(theme) else 0x33444444)
                 }
             }
-            frame.addView(swatch, FrameLayout.LayoutParams(dp(if (narrow) 32 else 38), dp(if (narrow) 32 else 38), Gravity.CENTER))
+            frame.addView(swatch, FrameLayout.LayoutParams(readerDp(if (narrow) 32 else 38), readerDp(if (narrow) 32 else 38), Gravity.CENTER))
             frame.setGlassClickListener(swatch) {
                 changeTheme(id)
             }
@@ -525,7 +527,7 @@ class ReaderActivity : BaseActivity() {
         val gallery = panelButton(getString(R.string.reader_submenu_label, getString(R.string.reader_more_backgrounds))) {
             startActivity(Intent(this@ReaderActivity, ReadingBackgroundActivity::class.java))
         }
-        if (!narrow) swatchRow.addView(gallery, LinearLayout.LayoutParams(dp(94), -1))
+        if (!narrow) swatchRow.addView(gallery, LinearLayout.LayoutParams(readerDp(94), -1))
         addView(swatchRow, rowParams())
         if (narrow) addView(gallery, rowParams())
 
@@ -538,7 +540,7 @@ class ReaderActivity : BaseActivity() {
         actions.chunked(if (narrow) 2 else 4).forEach { buttons ->
             val row = controlRow()
             buttons.forEachIndexed { index, button ->
-                row.addView(button, weighted().apply { if (index > 0) marginStart = dp(6) })
+                row.addView(button, weighted().apply { if (index > 0) marginStart = readerDp(6) })
             }
             addView(row, rowParams())
         }
@@ -570,7 +572,7 @@ class ReaderActivity : BaseActivity() {
     private fun sectionPanel(title: String, main: Boolean = false, populate: LinearLayout.() -> Unit) =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(10), dp(14), dp(12))
+            setPadding(readerDp(14), readerDp(10), readerDp(14), readerDp(12))
             val heading = FrameLayout(this@ReaderActivity)
             heading.addView(readerLabel(title, ReaderPrefs.ink(theme), 16f).apply {
                 setTypeface(null, Typeface.BOLD)
@@ -582,15 +584,15 @@ class ReaderActivity : BaseActivity() {
                 }.apply {
                     contentDescription = getString(R.string.reader_back_to_settings)
                 }
-                heading.addView(back, FrameLayout.LayoutParams(dp(44), dp(44),
+                heading.addView(back, FrameLayout.LayoutParams(readerDp(44), readerDp(44),
                     Gravity.START or Gravity.CENTER_VERTICAL))
             }
-            addView(heading, LinearLayout.LayoutParams(-1, dp(46)))
+            addView(heading, LinearLayout.LayoutParams(-1, readerDp(46)))
             populate()
         }
 
     private fun controlRow() = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-    private fun rowParams() = LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(6) }
+    private fun rowParams() = LinearLayout.LayoutParams(-1, readerDp(46)).apply { topMargin = readerDp(6) }
     private fun weighted() = LinearLayout.LayoutParams(0, -1, 1f)
 
     private fun panelButton(label: String, id: Int = View.NO_ID, action: () -> Unit) =
@@ -608,7 +610,7 @@ class ReaderActivity : BaseActivity() {
     private fun slider(label: String, value: Int, min: Int, max: Int, suffix: String = "",
                        onChange: (Int) -> Unit): LinearLayout {
         val row = controlRow()
-        row.addView(readerLabel(label, ReaderPrefs.softInk(theme), 13f), LinearLayout.LayoutParams(dp(44), -1))
+        row.addView(readerLabel(label, ReaderPrefs.softInk(theme), 13f), LinearLayout.LayoutParams(readerDp(44), -1))
         val valueLabel = readerLabel("$value$suffix", ReaderPrefs.ink(theme), 13f)
         val slider = SeekBar(this).apply {
             contentDescription = label
@@ -630,7 +632,7 @@ class ReaderActivity : BaseActivity() {
             })
         }
         row.addView(slider, weighted())
-        row.addView(valueLabel, LinearLayout.LayoutParams(dp(44), -1))
+        row.addView(valueLabel, LinearLayout.LayoutParams(readerDp(44), -1))
         return row
     }
 
@@ -730,7 +732,7 @@ class ReaderActivity : BaseActivity() {
         }
         val availableWidth = pageView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
         val availableHeight = pageView.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
-        val dialogWidth = minOf(dp(345), (availableWidth - dp(32)).coerceAtLeast(1))
+        val dialogWidth = minOf(readerDp(345), (availableWidth - readerDp(32)).coerceAtLeast(1))
         val maxHeight = (availableHeight * 0.66f).toInt()
         content.measure(
             View.MeasureSpec.makeMeasureSpec(dialogWidth, View.MeasureSpec.EXACTLY),
@@ -820,7 +822,7 @@ class ReaderActivity : BaseActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val back = GlassActionButton(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            layoutParams = LinearLayout.LayoutParams(readerDp(36), readerDp(36))
             useBackIcon(ink, 18)
             usePopupOptics()
             tintColor = ReaderPrefs.chrome(theme)
@@ -838,19 +840,19 @@ class ReaderActivity : BaseActivity() {
 
         // 右侧：目录跳转按钮（去底部 / 去顶部 / 去当前 循环切换）
         val jumpIcon = android.widget.ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+            layoutParams = LinearLayout.LayoutParams(readerDp(22), readerDp(22))
             setColorFilter(ink)
         }
         val jumpLabel = TextView(this).apply {
             textSize = 9f
             setTextColor(soft)
             gravity = Gravity.CENTER
-            setPadding(0, dp(2), 0, 0)
+            setPadding(0, readerDp(2), 0, 0)
         }
         val jumpButton = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(readerDp(46), ViewGroup.LayoutParams.WRAP_CONTENT)
             isClickable = true
             addView(jumpIcon)
             addView(jumpLabel)
@@ -862,7 +864,7 @@ class ReaderActivity : BaseActivity() {
         // 长书章节数以千计，列表高度封顶在 0.66 屏，避免目录占满整屏（与设置面板同一思路）。
         val scroll = object : SoftScrollView(this) {
             override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-                val safeHeight = (pageView.height * 0.66f).toInt().coerceAtLeast(dp(280))
+                val safeHeight = (pageView.height * 0.66f).toInt().coerceAtLeast(readerDp(280))
                 val maxHeight = if (MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED) safeHeight
                     else minOf(safeHeight, MeasureSpec.getSize(heightSpec))
                 super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST))
@@ -892,7 +894,7 @@ class ReaderActivity : BaseActivity() {
                     setTextColor(soft)
                     textSize = 12f
                     gravity = Gravity.CENTER
-                    setPadding(0, dp(28), 0, dp(28))
+                    setPadding(0, readerDp(28), 0, readerDp(28))
                 })
                 return
             }
@@ -900,7 +902,7 @@ class ReaderActivity : BaseActivity() {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(4), dp(10), dp(2), dp(10))
+                    setPadding(readerDp(4), readerDp(10), readerDp(2), readerDp(10))
                 }
                 // 左侧：章节名 + 片段，点击跳转
                 val texts = LinearLayout(this).apply {
@@ -929,7 +931,7 @@ class ReaderActivity : BaseActivity() {
                     textSize = 11f
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(0, dp(3), 0, 0)
+                    setPadding(0, readerDp(3), 0, 0)
                 })
                 row.addView(texts)
                 // 右侧：删除
@@ -937,10 +939,10 @@ class ReaderActivity : BaseActivity() {
                     setImageResource(R.drawable.ic_trash)
                     setColorFilter(soft)
                     // 触摸区 30dp，内边距 6dp，图标实际画 18dp
-                    val size = dp(30)
-                    layoutParams = LinearLayout.LayoutParams(size, size).apply { marginStart = dp(6) }
+                    val size = readerDp(30)
+                    layoutParams = LinearLayout.LayoutParams(size, size).apply { marginStart = readerDp(6) }
                     isClickable = true
-                    setPadding(dp(6), dp(6), dp(6), dp(6))
+                    setPadding(readerDp(6), readerDp(6), readerDp(6), readerDp(6))
                     contentDescription = "删除书签"
                     setOnClickListener {
                         BookmarkStore.remove(this@ReaderActivity, book.id, mark.id)
@@ -968,7 +970,7 @@ class ReaderActivity : BaseActivity() {
                     } else {
                         setTextColor(ink)
                     }
-                    val pad = dp(14)
+                    val pad = readerDp(14)
                     setPadding(pad, pad, pad, pad)
                     isClickable = true
                     setOnClickListener {
@@ -1051,7 +1053,7 @@ class ReaderActivity : BaseActivity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 isClickable = true
-                setPadding(dp(14), 0, dp(14), 0)
+                setPadding(readerDp(14), 0, readerDp(14), 0)
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 )
@@ -1067,8 +1069,8 @@ class ReaderActivity : BaseActivity() {
                 )
             })
             val line = View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(18), dp(2))
-                    .apply { topMargin = dp(5) }
+                layoutParams = LinearLayout.LayoutParams(readerDp(18), readerDp(2))
+                    .apply { topMargin = readerDp(5) }
                 setBackgroundColor(accent)
                 visibility = View.INVISIBLE
             }
@@ -1102,13 +1104,13 @@ class ReaderActivity : BaseActivity() {
             setGravity(if (anchorTopEnd) Gravity.TOP or Gravity.END else Gravity.CENTER)
         }
         val available = pageView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-        val width = minOf(dp(widthDp), (available - dp(32)).coerceAtLeast(1))
+        val width = minOf(readerDp(widthDp), (available - readerDp(32)).coerceAtLeast(1))
         if (anchorTopEnd) {
             dialog.window?.setLayout(width, FrameLayout.LayoutParams.WRAP_CONTENT)
             dialog.window?.setGravity(Gravity.TOP or Gravity.END)
             dialog.window?.attributes = dialog.window?.attributes?.apply {
-                x = dp(12)
-                y = dp(58)
+                x = readerDp(12)
+                y = readerDp(58)
             }
         }
         dialog.show()
@@ -1121,7 +1123,7 @@ class ReaderActivity : BaseActivity() {
         val chrome = ReaderPrefs.chrome(theme)
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(12))
+            setPadding(readerDp(20), readerDp(18), readerDp(20), readerDp(12))
             background = GradientDrawable().apply {
                 cornerRadius = 26 * resources.displayMetrics.density
                 setColor((chrome and 0xFFFFFF) or 0xB8000000.toInt())
@@ -1143,13 +1145,13 @@ class ReaderActivity : BaseActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         head.addView(BookCoverView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(46), dp(64))
+            layoutParams = LinearLayout.LayoutParams(readerDp(46), readerDp(64))
             bind(book)
         })
         val texts = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = dp(12) }
+                .apply { marginStart = readerDp(12) }
         }
         texts.addView(TextView(this).apply {
             text = book.title
@@ -1165,7 +1167,7 @@ class ReaderActivity : BaseActivity() {
                 text = author
                 setTextColor(soft)
                 textSize = 12f
-                setPadding(0, dp(4), 0, 0)
+                setPadding(0, readerDp(4), 0, 0)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
@@ -1183,8 +1185,8 @@ class ReaderActivity : BaseActivity() {
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setCompoundDrawablesWithIntrinsicBounds(null, icon, null, null)
-                compoundDrawablePadding = dp(8)
-                setPadding(dp(6), dp(14), dp(6), dp(10))
+                compoundDrawablePadding = readerDp(8)
+                setPadding(readerDp(6), readerDp(14), readerDp(6), readerDp(10))
                 isClickable = true
                 setOnClickListener { onClick() }
             }
@@ -1192,7 +1194,7 @@ class ReaderActivity : BaseActivity() {
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(14), 0, 0)
+            setPadding(0, readerDp(14), 0, 0)
         }
         // 当前页已加书签时按钮变成「已加书签」，再点就是删除
         val accent = getColor(R.color.shelf_tab_selected)
@@ -1387,7 +1389,7 @@ class ReaderActivity : BaseActivity() {
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(12))
+            setPadding(0, 0, 0, readerDp(12))
         })
 
         // 输入行：放大镜 + 输入框 + 右侧「搜索」
@@ -1395,15 +1397,15 @@ class ReaderActivity : BaseActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = getDrawable(R.drawable.bg_glass_chip)
-            setPadding(dp(12), 0, dp(4), 0)
+            setPadding(readerDp(12), 0, readerDp(4), 0)
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+                ViewGroup.LayoutParams.MATCH_PARENT, readerDp(46)
             )
         }
         inputRow.addView(android.widget.ImageView(this).apply {
             setImageResource(R.drawable.ic_header_search)
             setColorFilter(soft)
-            layoutParams = LinearLayout.LayoutParams(dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(readerDp(16), readerDp(16))
         })
         val input = EditText(this).apply {
             hint = "搜索本书内容"
@@ -1413,7 +1415,7 @@ class ReaderActivity : BaseActivity() {
             maxLines = 1
             setSingleLine()
             setBackground(null)
-            setPadding(dp(8), 0, 0, 0)
+            setPadding(readerDp(8), 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
         }
         inputRow.addView(input)
@@ -1423,7 +1425,7 @@ class ReaderActivity : BaseActivity() {
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setPadding(readerDp(10), readerDp(8), readerDp(10), readerDp(8))
             isClickable = true
         }
         inputRow.addView(searchButton)
@@ -1434,7 +1436,7 @@ class ReaderActivity : BaseActivity() {
         val historyHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(16), 0, dp(8))
+            setPadding(0, readerDp(16), 0, readerDp(8))
         }
         historyHeader.addView(TextView(this).apply {
             text = "搜索历史"
@@ -1445,10 +1447,10 @@ class ReaderActivity : BaseActivity() {
         val trash = android.widget.ImageView(this).apply {
             setImageResource(R.drawable.ic_trash)
             setColorFilter(soft)
-            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
+            layoutParams = LinearLayout.LayoutParams(readerDp(18), readerDp(18))
             isClickable = true
             contentDescription = "清空搜索历史"
-            setPadding(dp(2), dp(2), dp(2), dp(2))
+            setPadding(readerDp(2), readerDp(2), readerDp(2), readerDp(2))
         }
         historyHeader.addView(trash)
         historyBox.addView(historyHeader)
@@ -1473,7 +1475,7 @@ class ReaderActivity : BaseActivity() {
         val chipPaint = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 12f * resources.displayMetrics.scaledDensity
         }
-        val rowWidth = dp(305).toFloat()
+        val rowWidth = readerDp(305).toFloat()
 
         // 历史词条：先横向排满一行再换行
         fun renderHistory() {
@@ -1484,13 +1486,13 @@ class ReaderActivity : BaseActivity() {
             var row: LinearLayout? = null
             var used = 0f
             items.forEach { word ->
-                val chipWidth = chipPaint.measureText(word) + dp(24)
+                val chipWidth = chipPaint.measureText(word) + readerDp(24)
                 if (row == null || (used > 0f && used + chipWidth > rowWidth)) {
                     val created = LinearLayout(this@ReaderActivity).apply {
                         orientation = LinearLayout.HORIZONTAL
                         layoutParams = LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply { bottomMargin = dp(8) }
+                        ).apply { bottomMargin = readerDp(8) }
                     }
                     historyChips.addView(created)
                     row = created
@@ -1501,10 +1503,10 @@ class ReaderActivity : BaseActivity() {
                     setTextColor(ink)
                     textSize = 12f
                     background = getDrawable(R.drawable.bg_glass_chip)
-                    setPadding(dp(12), dp(7), dp(12), dp(7))
+                    setPadding(readerDp(12), readerDp(7), readerDp(12), readerDp(7))
                     layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { marginEnd = dp(8) }
+                    ).apply { marginEnd = readerDp(8) }
                     isClickable = true
                     setOnClickListener {
                         input.setText(word)
@@ -1512,7 +1514,7 @@ class ReaderActivity : BaseActivity() {
                         runSearchRef?.invoke(word)
                     }
                 })
-                used += chipWidth + dp(8)
+                used += chipWidth + readerDp(8)
             }
         }
 
@@ -1528,13 +1530,13 @@ class ReaderActivity : BaseActivity() {
             historyBox.visibility = View.GONE
             resultsScroll.visibility = View.VISIBLE
             resultsScroll.layoutParams = (resultsScroll.layoutParams as LinearLayout.LayoutParams)
-                .apply { height = dp(300) }
+                .apply { height = readerDp(300) }
             resultsBox.addView(TextView(this@ReaderActivity).apply {
                 setText("正在搜索…")
                 setTextColor(soft)
                 textSize = 12f
                 gravity = Gravity.CENTER
-                setPadding(0, dp(18), 0, dp(18))
+                setPadding(0, readerDp(18), 0, readerDp(18))
             })
             // 后台扫全文：执行器独立于分页队列，大书排版时搜索不用排队
             val target = doc
@@ -1551,7 +1553,7 @@ class ReaderActivity : BaseActivity() {
                             setTextColor(soft)
                             textSize = 12f
                             gravity = Gravity.CENTER
-                            setPadding(0, dp(20), 0, dp(20))
+                            setPadding(0, readerDp(20), 0, readerDp(20))
                         })
                     } else {
                         outcome.hits.forEachIndexed { matchIndex, hit ->
@@ -1562,15 +1564,15 @@ class ReaderActivity : BaseActivity() {
                                 typeface = Typeface.DEFAULT_BOLD
                                 maxLines = 1
                                 ellipsize = android.text.TextUtils.TruncateAt.END
-                                setPadding(dp(2), dp(14), dp(2), dp(6))
+                                setPadding(readerDp(2), readerDp(14), readerDp(2), readerDp(6))
                             })
                             resultsBox.addView(TextView(this@ReaderActivity).apply {
                                 setText(highlightKeyword(hit.sentence, query, accent))
                                 setTextColor(ink)
                                 textSize = 12f
-                                setLineSpacing(dp(4).toFloat(), 1f)
+                                setLineSpacing(readerDp(4).toFloat(), 1f)
                                 background = getDrawable(R.drawable.bg_glass_chip)
-                                setPadding(dp(12), dp(10), dp(12), dp(10))
+                                setPadding(readerDp(12), readerDp(10), readerDp(12), readerDp(10))
                                 isClickable = true
                                 setOnClickListener {
                                     dialogRef[0]?.dismiss()
@@ -1585,12 +1587,12 @@ class ReaderActivity : BaseActivity() {
                                 setTextColor(soft)
                                 textSize = 11f
                                 gravity = Gravity.CENTER
-                                setPadding(0, dp(12), 0, dp(12))
+                                setPadding(0, readerDp(12), 0, readerDp(12))
                             })
                         }
                     }
                     resultsScroll.layoutParams = (resultsScroll.layoutParams as LinearLayout.LayoutParams)
-                        .apply { height = if (found > 0) dp(300) else ViewGroup.LayoutParams.WRAP_CONTENT }
+                        .apply { height = if (found > 0) readerDp(300) else ViewGroup.LayoutParams.WRAP_CONTENT }
                 }
             }
         }
@@ -1654,21 +1656,21 @@ class ReaderActivity : BaseActivity() {
                 backdropSource = pageView
                 frosted = GlassStyle.load(this@ReaderActivity) == GlassStyle.FROSTED
                 layoutParams = FrameLayout.LayoutParams(
-                    dp(260), ViewGroup.LayoutParams.WRAP_CONTENT,
+                    readerDp(260), ViewGroup.LayoutParams.WRAP_CONTENT,
                     Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 ).apply {
-                    topMargin = dp(8) + topInset
+                    topMargin = readerDp(8) + topInset
                 }
             }
             val chip = FrameLayout(this).apply {
-                setPadding(dp(10), dp(8), dp(4), dp(8))
+                setPadding(readerDp(10), readerDp(8), readerDp(4), readerDp(8))
             }
             searchLabel = TextView(this).apply {
                 textSize = 12f
                 gravity = Gravity.CENTER
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(52), 0, dp(52), 0)
+                setPadding(readerDp(52), 0, readerDp(52), 0)
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1686,13 +1688,13 @@ class ReaderActivity : BaseActivity() {
             }
             searchCounter = TextView(this).apply {
                 textSize = 10.5f
-                setPadding(dp(4), 0, dp(2), 0)
+                setPadding(readerDp(4), 0, readerDp(2), 0)
             }
             searchClose = TextView(this).apply {
                 text = "✕"
                 textSize = 13f
                 gravity = Gravity.CENTER
-                setPadding(dp(8), 0, dp(10), 0)
+                setPadding(readerDp(8), 0, readerDp(10), 0)
                 isClickable = true
                 contentDescription = "退出搜索"
                 setOnClickListener { exitSearchMode() }
@@ -1715,9 +1717,9 @@ class ReaderActivity : BaseActivity() {
                 backdropSource = pageView
                 frosted = GlassStyle.load(this@ReaderActivity) == GlassStyle.FROSTED
                 layoutParams = FrameLayout.LayoutParams(
-                    dp(260), dp(40), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                    readerDp(260), readerDp(40), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 ).apply {
-                    bottomMargin = dp(24) + bottomInsetPx
+                    bottomMargin = readerDp(24) + bottomInsetPx
                 }
             }
             val nav = LinearLayout(this).apply {
@@ -1921,7 +1923,7 @@ class ReaderActivity : BaseActivity() {
                     val vertical = mode == ReaderPrefs.MODE_VERTICAL || mode == ReaderPrefs.MODE_SCROLL
                     val travel = if (vertical) dy else dx
                     val across = if (vertical) dx else dy
-                    if (kotlin.math.abs(travel) > dp(48) && kotlin.math.abs(travel) > kotlin.math.abs(across) * 1.4f) {
+                    if (kotlin.math.abs(travel) > readerDp(48) && kotlin.math.abs(travel) > kotlin.math.abs(across) * 1.4f) {
                         // 落在栏/胶囊上时由 Activity 接管；面板（含滑杆）打开时不接管
                         val panelOpen = settingsPanel.visibility == View.VISIBLE
                         val onChrome = listOf(
