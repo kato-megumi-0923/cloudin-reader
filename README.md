@@ -74,7 +74,7 @@
 | 基础 | AppCompat + Material Components 1.11 |
 | 列表 | RecyclerView + 自定义 Adapter |
 | 文本排版 | `StaticLayout` + 自研分页 |
-| 玻璃 | AGSL `RuntimeShader` + `RenderNode` + 第三方 `liquidglass` |
+| 玻璃 | AGSL `RuntimeShader` + `RenderNode`，封装在自研 `refract` 模块 |
 | 存储 | SharedPreferences + 应用私有目录 JSON |
 | 网络 | 仅局域网传书用的 `ServerSocket`，无第三方网络库 |
 
@@ -116,7 +116,7 @@ app/src/main/java/com/cloudin/reader/
 ├── PageCurl.kt              仿真卷页
 ├── PageMotion.kt            翻页动画
 ├── ShelfTabBar.kt           自研底栏 + 光学透镜
-├── AgslGlassView.kt         AGSL 玻璃容器
+├── (玻璃容器在 refract 模块：refract/GlassView.kt)
 ├── GlassActionButton.kt     玻璃按钮 + 统一按压动效
 ├── GlassStyle.kt            液态 / 磨砂材质切换
 ├── BookStore.kt             书籍存储与导入
@@ -153,7 +153,6 @@ app/src/main/java/com/cloudin/reader/
 ## 致谢
 
 - [AndroidLiquidGlassView](https://github.com/QmDeve/AndroidLiquidGlassView)（MIT）：AGSL 玻璃着色器的基础
-- [liquidglass](https://github.com/QWEA0/liquid-glass-android)：磨砂材质与玻璃控件
 - Material Symbols Rounded：界面图标
 
 ---
